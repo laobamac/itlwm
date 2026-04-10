@@ -1,3 +1,6 @@
+firmware/
+*/firmware/
+**/firmware/
 .DS_Store
 DerivedData
 build

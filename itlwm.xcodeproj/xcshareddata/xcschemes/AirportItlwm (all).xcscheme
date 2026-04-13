@@ -14,104 +14,6 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "35CBE655251CB89700435CBC"
-               BuildableName = "AirportItlwm.kext"
-               BlueprintName = "AirportItlwm-Big Sur"
-               ReferencedContainer = "container:itlwm.xcodeproj">
-            </BuildableReference>
-         </BuildActionEntry>
-         <BuildActionEntry
-            buildForTesting = "YES"
-            buildForRunning = "YES"
-            buildForProfiling = "YES"
-            buildForArchiving = "YES"
-            buildForAnalyzing = "YES">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "F89B6BB825021C9C000F77FF"
-               BuildableName = "AirportItlwm.kext"
-               BlueprintName = "AirportItlwm-Catalina"
-               ReferencedContainer = "container:itlwm.xcodeproj">
-            </BuildableReference>
-         </BuildActionEntry>
-         <BuildActionEntry
-            buildForTesting = "YES"
-            buildForRunning = "YES"
-            buildForProfiling = "YES"
-            buildForArchiving = "YES"
-            buildForAnalyzing = "YES">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "35CBE72A251CB8CA00435CBC"
-               BuildableName = "AirportItlwm.kext"
-               BlueprintName = "AirportItlwm-High Sierra"
-               ReferencedContainer = "container:itlwm.xcodeproj">
-            </BuildableReference>
-         </BuildActionEntry>
-         <BuildActionEntry
-            buildForTesting = "YES"
-            buildForRunning = "YES"
-            buildForProfiling = "YES"
-            buildForArchiving = "YES"
-            buildForAnalyzing = "YES">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "35CBE6BF251CB8BF00435CBC"
-               BuildableName = "AirportItlwm.kext"
-               BlueprintName = "AirportItlwm-Mojave"
-               ReferencedContainer = "container:itlwm.xcodeproj">
-            </BuildableReference>
-         </BuildActionEntry>
-         <BuildActionEntry
-            buildForTesting = "YES"
-            buildForRunning = "YES"
-            buildForProfiling = "YES"
-            buildForArchiving = "YES"
-            buildForAnalyzing = "YES">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "F897ECB6266EFF93005EE8F7"
-               BuildableName = "AirportItlwm.kext"
-               BlueprintName = "AirportItlwm-Monterey"
-               ReferencedContainer = "container:itlwm.xcodeproj">
-            </BuildableReference>
-         </BuildActionEntry>
-         <BuildActionEntry
-            buildForTesting = "YES"
-            buildForRunning = "YES"
-            buildForProfiling = "YES"
-            buildForArchiving = "YES"
-            buildForAnalyzing = "YES">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "F8AE64F5285471560085B4CF"
-               BuildableName = "AirportItlwm.kext"
-               BlueprintName = "AirportItlwm-Ventura"
-               ReferencedContainer = "container:itlwm.xcodeproj">
-            </BuildableReference>
-         </BuildActionEntry>
-         <BuildActionEntry
-            buildForTesting = "YES"
-            buildForRunning = "YES"
-            buildForProfiling = "YES"
-            buildForArchiving = "YES"
-            buildForAnalyzing = "YES">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "F8B210A72A2EC2680043ECBD"
-               BuildableName = "AirportItlwm.kext"
-               BlueprintName = "AirportItlwm-Sonoma14.0"
-               ReferencedContainer = "container:itlwm.xcodeproj">
-            </BuildableReference>
-         </BuildActionEntry>
-         <BuildActionEntry
-            buildForTesting = "YES"
-            buildForRunning = "YES"
-            buildForProfiling = "YES"
-            buildForArchiving = "YES"
-            buildForAnalyzing = "YES">
-            <BuildableReference
-               BuildableIdentifier = "primary"
                BlueprintIdentifier = "F8D94C802B9ABFE20081A3C4"
                BuildableName = "AirportItlwm.kext"
                BlueprintName = "AirportItlwm-Sonoma14.4"
@@ -145,15 +47,6 @@
       savedToolIdentifier = ""
       useCustomWorkingDirectory = "NO"
       debugDocumentVersioning = "YES">
-      <MacroExpansion>
-         <BuildableReference
-            BuildableIdentifier = "primary"
-            BlueprintIdentifier = "35CBE655251CB89700435CBC"
-            BuildableName = "AirportItlwm.kext"
-            BlueprintName = "AirportItlwm-Big Sur"
-            ReferencedContainer = "container:itlwm.xcodeproj">
-         </BuildableReference>
-      </MacroExpansion>
    </ProfileAction>
    <AnalyzeAction
       buildConfiguration = "Debug">

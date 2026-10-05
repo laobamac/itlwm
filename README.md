@@ -1,3 +1,5 @@
+[中文](README.CN.md)
+
 # itlwm
 
 **An Intel Wi-Fi Adapter Kernel Extension for macOS, based on the OpenBSD Project.**
@@ -52,7 +54,7 @@ xcodebuild -project itlwm.xcodeproj -scheme AirportItlwm-Tahoe \
 
 ## Download
 
-[![Download from https://github.com/OpenIntelWireless/itlwm/releases](https://img.shields.io/github/v/release/OpenIntelWireless/itlwm?label=Download)](https://github.com/OpenIntelWireless/itlwm/releases)
+[![Download](https://img.shields.io/github/v/release/laobamac/itlwm?include_prereleases&label=Download)](https://github.com/laobamac/itlwm/releases)
 
 ## Questions and Issues
 
@@ -60,7 +62,7 @@ Check out our [FAQ Page](https://openintelwireless.github.io/itlwm/FAQ) for more
 
 If you have other questions or feedback, feel free to [![Join the chat at https://gitter.im/OpenIntelWireless/itlwm](https://badges.gitter.im/OpenIntelWireless/itlwm.svg)](https://gitter.im/OpenIntelWireless/itlwm?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge).
 
-We only accept bug reports in GitHub Issues, before opening an issue, you're recommended to reconfirm it with us on [Gitter](https://gitter.im/OpenIntelWireless/itlwm); once it's confirmed, please use the provided issue template.
+We only accept bug reports in GitHub Issues.
 
 ## Credits
 

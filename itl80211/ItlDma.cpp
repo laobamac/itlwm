@@ -83,7 +83,11 @@ bool ItlDmaArena::initialize(IOPCIDevice *pci, IOService *controller, uint8_t bi
         if (!block.vaddr)
             return false;
     }
+#if __IO80211_TARGET == __MAC_15_2
+    owner->setProperty("ItlwmDMARevision", "sequoia-vtd-1");
+#else
     owner->setProperty("ItlwmDMARevision", "tahoe-vtd-1");
+#endif
     owner->setProperty("ItlwmDMAMapper", mode);
     owner->setProperty("ItlwmDMAAddressBits", bits, 32);
     owner->setProperty("ItlwmDMAPoolBytes", BlockCount * BlockSize, 32);

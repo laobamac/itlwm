@@ -3354,6 +3354,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A7D000012026100700000001 /* ItlDma.cpp in Sources */,
 				F8D94CA62B9ABFE20081A3C4 /* rs.cpp in Sources */,
 				F8D94CA72B9ABFE20081A3C4 /* _mbuf.cpp in Sources */,
 				F8D94CA82B9ABFE20081A3C4 /* ieee80211_ra.c in Sources */,
@@ -4228,6 +4229,7 @@
 				GCC_PREFIX_HEADER = itlwm/PrivateSPI.pch;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					AIRPORT_WCL,
+					AIRPORT_VTD,
 					"$(inherited)",
 					AIRPORT,
 					"__IO80211_TARGET=__MAC_15_2",
@@ -4295,6 +4297,7 @@
 				GCC_PREFIX_HEADER = itlwm/PrivateSPI.pch;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					AIRPORT_WCL,
+					AIRPORT_VTD,
 					"__IO80211_TARGET=__MAC_15_2",
 					AIRPORT,
 					__PRIVATE_SPI__,

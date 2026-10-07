@@ -320,6 +320,9 @@ struct iwx_host_cmd {
  */
 
 struct iwx_dma_info {
+#ifdef AIRPORT_VTD
+    ItlDmaBuffer mapping;
+#endif
 	IOBufferMemoryDescriptor* buffer;
     bus_addr_t        paddr;
     void             *vaddr;

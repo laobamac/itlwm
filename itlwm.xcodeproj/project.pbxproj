@@ -992,6 +992,7 @@
 		F8F92586240974EF0088B8D5 /* types.h in Headers */ = {isa = PBXBuildFile; fileRef = F8F9257B240974EF0088B8D5 /* types.h */; };
 		F8F9EDE1240B7415009CB8E7 /* _task.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F8F9EDE0240B7415009CB8E7 /* _task.cpp */; };
 		F8FA0EEC2501E7EE00B1822E /* zutil.h in Headers */ = {isa = PBXBuildFile; fileRef = F8FA0EEB2501E7EE00B1822E /* zutil.h */; };
+		A7D000012026100700000001 /* ItlDma.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A7D000022026100700000001 /* ItlDma.cpp */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -1339,6 +1340,8 @@
 		F8F9EDE0240B7415009CB8E7 /* _task.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = _task.cpp; sourceTree = "<group>"; };
 		F8FA0EEB2501E7EE00B1822E /* zutil.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = zutil.h; sourceTree = "<group>"; };
 		F8FA0EED2501E8C100B1822E /* zutil.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = zutil.c; sourceTree = "<group>"; };
+		A7D000022026100700000001 /* ItlDma.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = ItlDma.cpp; sourceTree = "<group>"; };
+		A7D000032026100700000001 /* ItlDma.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = ItlDma.hpp; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1810,6 +1813,8 @@
 		F8D6CD4F2442E0D100D2A454 /* itl80211 */ = {
 			isa = PBXGroup;
 			children = (
+				A7D000022026100700000001 /* ItlDma.cpp */,
+				A7D000032026100700000001 /* ItlDma.hpp */,
 				F8F9256D240972EE0088B8D5 /* linux */,
 				024A07C723FCBC6C009FBA6C /* openbsd */,
 				024A07BA23FCBC6C009FBA6C /* compat.cpp */,
@@ -3267,6 +3272,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A7D000012026100700000001 /* ItlDma.cpp in Sources */,
 				F8D94CA62B9ABFE20081A3C4 /* rs.cpp in Sources */,
 				F8D94CA72B9ABFE20081A3C4 /* _mbuf.cpp in Sources */,
 				F8D94CA82B9ABFE20081A3C4 /* ieee80211_ra.c in Sources */,
@@ -4188,6 +4194,7 @@
 				GCC_PREFIX_HEADER = itlwm/PrivateSPI.pch;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					AIRPORT_WCL,
+					AIRPORT_VTD,
 					"$(inherited)",
 					AIRPORT,
 					"__IO80211_TARGET=__MAC_26_0",
@@ -4254,6 +4261,7 @@
 				GCC_PREFIX_HEADER = itlwm/PrivateSPI.pch;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					AIRPORT_WCL,
+					AIRPORT_VTD,
 					"__IO80211_TARGET=__MAC_26_0",
 					AIRPORT,
 					__PRIVATE_SPI__,

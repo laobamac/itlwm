@@ -168,16 +168,32 @@ iwm_reset_tx_ring(struct iwm_softc *sc, struct iwm_tx_ring *ring)
     for (i = 0; i < IWM_TX_RING_COUNT; i++) {
         struct iwm_tx_data *data = &ring->data[i];
 
+#ifdef AIRPORT_VTD
+        data->commandPending = false;
+        data->commandWaiting = false;
+        if (ring->qid == sc->cmdqid) {
+            ::free(sc->sc_cmd_resp_pkt[i]);
+            sc->sc_cmd_resp_pkt[i] = nullptr;
+            sc->sc_cmd_resp_len[i] = 0;
+        }
+        if (ring->desc)
+            getMainCommandGate()->commandWakeup(&ring->desc[i]);
+#endif
         iwm_txd_done(sc, data);
     }
     /* Clear TX descriptors. */
-    memset(ring->desc, 0, ring->desc_dma.size);
+    if (ring->desc)
+        memset(ring->desc, 0, ring->desc_dma.size);
 //    bus_dmamap_sync(sc->sc_dmat, ring->desc_dma.map, 0,
 //        ring->desc_dma.size, BUS_DMASYNC_PREWRITE);
     sc->qfullmsk &= ~(1 << ring->qid);
     /* 7000 family NICs are locked while commands are in progress. */
     if (ring->qid == sc->cmdqid && ring->queued > 0) {
-        if (sc->sc_device_family == IWM_DEVICE_FAMILY_7000)
+        if (sc->sc_device_family == IWM_DEVICE_FAMILY_7000
+#ifdef AIRPORT_VTD
+            && sc->sc_nic_locks > 0
+#endif
+            )
             iwm_nic_unlock(sc);
     }
     ring->queued = 0;

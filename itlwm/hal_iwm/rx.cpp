@@ -305,7 +305,7 @@ iwm_rx_addbuf(struct iwm_softc *sc, int size, int idx)
 //        mbuf_pkthdr_setlen(m, size);
     //    m->m_len = m->m_pkthdr.len = m->m_ext.ext_size;
 //    err = bus_dmamap_load(data->map, m);
-    data->map->dm_nsegs = data->map->cursor->getPhysicalSegments(m, &seg, 1);
+    data->map->dm_nsegs = bus_dmamap_packet(data->map, m, &seg, 1, true);
 //    XYLog("map rx dm_nsegs=%d\n", data->map->dm_nsegs);
     if (data->map->dm_nsegs == 0) {
         XYLog("RX Map new address FAIL!!!!\n");
@@ -1006,6 +1006,10 @@ iwm_rx_pkt(struct iwm_softc *sc, struct iwm_rx_data *data, struct mbuf_list *ml)
     
     //    bus_dmamap_sync(sc->sc_dmat, data->map, 0, IWM_RBUF_SIZE,
     //        BUS_DMASYNC_POSTREAD);
+    if (!bus_dmamap_read(data->map, data->m, IWM_RBUF_SIZE)) {
+        ifp->netStat->inputErrors++;
+        return;
+    }
     m0 = data->m;
     while (m0 && offset + minsz < IWM_RBUF_SIZE) {
         pkt = (struct iwm_rx_packet *)((uint8_t*)mbuf_data(m0) + offset);

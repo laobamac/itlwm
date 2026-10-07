@@ -1748,7 +1748,19 @@ iwm_tx(struct iwm_softc *sc, mbuf_t m, struct ieee80211_node *ni, int ac)
         }
     }
     
+#ifdef AIRPORT_VTD
+    if (dmaDetaching || qid < 0 || qid >= nitems(sc->txq)) {
+        mbuf_freem(m);
+        return ENXIO;
+    }
+#endif
     ring = &sc->txq[qid];
+#ifdef AIRPORT_VTD
+    if (!ring->desc || ring->data[ring->cur].m || ring->queued >= IWM_TX_RING_COUNT - 1) {
+        mbuf_freem(m);
+        return ENOBUFS;
+    }
+#endif
     desc = &ring->desc[ring->cur];
     memset(desc, 0, sizeof(*desc));
     data = &ring->data[ring->cur];
@@ -1895,7 +1907,7 @@ iwm_tx(struct iwm_softc *sc, mbuf_t m, struct ieee80211_node *ni, int ac)
     
     tx->tx_flags |= htole32(flags);
     
-    nsegs = data->map->cursor->getPhysicalSegmentsWithCoalesce(m, &segs[0], IWM_NUM_OF_TBS - 2);
+    nsegs = bus_dmamap_packet(data->map, m, &segs[0], IWM_NUM_OF_TBS - 2, false);
     //    XYLog("map frame dm_nsegs=%d\n", data->map->dm_nsegs);
     if (nsegs == 0) {
         XYLog("%s: can't map mbuf (error %d)\n", DEVNAME(sc), data->map->dm_nsegs);

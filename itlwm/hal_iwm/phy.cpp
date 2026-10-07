@@ -479,6 +479,17 @@ iwm_binding_cmd(struct iwm_softc *sc, struct iwm_node *in, uint32_t action)
 int ItlIwm::
 iwm_send_cmd(struct iwm_softc *sc, struct iwm_host_cmd *hcmd)
 {
+#ifdef AIRPORT_VTD
+    if (!getMainWorkLoop()->inGate()) {
+        return getMainCommandGate()->runAction(
+            [](OSObject *, void *arg0, void *arg1, void *arg2, void *) -> IOReturn {
+                return static_cast<ItlIwm *>(arg0)->iwm_send_cmd(
+                    static_cast<iwm_softc *>(arg1), static_cast<iwm_host_cmd *>(arg2));
+            }, this, sc, hcmd);
+    }
+    uint64_t epoch = dmaEpoch;
+    bool submitted = false;
+#endif
     struct iwm_tx_ring *ring = &sc->txq[sc->cmdqid];
     struct iwm_tfd *desc;
     struct iwm_tx_data *txdata;
@@ -497,6 +508,16 @@ iwm_send_cmd(struct iwm_softc *sc, struct iwm_host_cmd *hcmd)
     code = hcmd->id;
     async = hcmd->flags & IWM_CMD_ASYNC;
     idx = ring->cur;
+#ifdef AIRPORT_VTD
+    hcmd->resp_pkt = nullptr;
+    if (dmaDetaching || !ring->desc || (sc->sc_flags & (IWM_FLAG_SHUTDOWN | IWM_FLAG_HW_ERR)))
+        return ENXIO;
+    if (ring->queued >= IWM_TX_RING_COUNT - 1 || ring->data[idx].commandPending || ring->data[idx].commandWaiting)
+        return ENOSPC;
+    if (async && (hcmd->flags & IWM_CMD_WANT_RESP))
+        return EINVAL;
+#endif
+
     
     for (i = 0, paylen = 0; i < nitems(hcmd->len); i++) {
         paylen += hcmd->len[i];
@@ -535,6 +556,12 @@ iwm_send_cmd(struct iwm_softc *sc, struct iwm_host_cmd *hcmd)
         datasz = sizeof(cmd->data);
     }
     
+#ifdef AIRPORT_VTD
+    if (hdrlen + paylen > 0xfff) {
+        err = EINVAL;
+        goto out;
+    }
+#endif
     if (paylen > datasz) {
         /* Command is too large to fit in pre-allocated space. */
         size_t totlen = hdrlen + paylen;
@@ -554,11 +581,12 @@ iwm_send_cmd(struct iwm_softc *sc, struct iwm_host_cmd *hcmd)
         mbuf_setlen(m, totlen);
         mbuf_pkthdr_setlen(m, totlen);
         cmd = mtod(m, struct iwm_device_cmd *);
-        txdata->map->dm_nsegs = txdata->map->cursor->getPhysicalSegmentsWithCoalesce(m, &seg, 1);
+        txdata->map->dm_nsegs = bus_dmamap_packet(txdata->map, m, &seg, 1, false);
         if (txdata->map->dm_nsegs == 0) {
             XYLog("%s: could not load fw cmd mbuf (%zd bytes)\n",
                   DEVNAME(sc), totlen);
             mbuf_freem(m);
+            err = EIO;
             goto out;
         }
 //        XYLog("map fw cmd dm_nsegs=%d\n", txdata->map->dm_nsegs);
@@ -592,6 +620,13 @@ iwm_send_cmd(struct iwm_softc *sc, struct iwm_host_cmd *hcmd)
         off += hcmd->len[i];
     }
     KASSERT(off == paylen, "off == paylen");
+    if (paylen > datasz && !bus_dmamap_write(txdata->map, txdata->m)) {
+        mbuf_freem(txdata->m);
+        txdata->m = nullptr;
+        err = EIO;
+        goto out;
+    }
+
     
     /* lo field is not aligned */
     addr_lo = htole32((uint32_t)paddr);
@@ -628,10 +663,36 @@ iwm_send_cmd(struct iwm_softc *sc, struct iwm_host_cmd *hcmd)
 
     iwm_update_sched(sc, ring->qid, ring->cur, 0, 0);
     /* Kick command ring. */
+#ifdef AIRPORT_VTD
+    txdata->commandPending = true;
+    txdata->commandWaiting = !async;
+    submitted = true;
+#endif
     ring->queued++;
     ring->cur = (ring->cur + 1) % IWM_TX_RING_COUNT;
     IWM_WRITE(sc, IWM_HBUS_TARG_WRPTR, ring->qid << 8 | ring->cur);
     
+#ifdef AIRPORT_VTD
+    if (!async) {
+        uint64_t deadline;
+        clock_interval_to_deadline(2, kSecondScale, &deadline);
+        while (epoch == dmaEpoch && txdata->commandPending) {
+            int result = getMainCommandGate()->commandSleep(desc, deadline, THREAD_UNINT);
+            if (result != THREAD_AWAKENED) {
+                if (txdata->commandPending)
+                    err = result == THREAD_TIMED_OUT ? EWOULDBLOCK : EINTR;
+                break;
+            }
+        }
+        if (epoch != dmaEpoch || generation != sc->sc_generation)
+            return ENXIO;
+        txdata->commandWaiting = false;
+        if (!err) {
+            hcmd->resp_pkt = reinterpret_cast<iwm_rx_packet *>(sc->sc_cmd_resp_pkt[idx]);
+            sc->sc_cmd_resp_pkt[idx] = nullptr;
+        }
+    }
+#else
     if (!async) {
         err = tsleep_nsec(desc, PCATCH, "iwmcmd", SEC_TO_NSEC(2));
         if (err == 0) {
@@ -649,7 +710,19 @@ iwm_send_cmd(struct iwm_softc *sc, struct iwm_host_cmd *hcmd)
             sc->sc_cmd_resp_pkt[idx] = NULL;
         }
     }
+#endif
 out:
+#ifdef AIRPORT_VTD
+    if (err) {
+        if (!submitted && txdata->m) {
+            mbuf_freem(txdata->m);
+            txdata->m = nullptr;
+        }
+        ::free(sc->sc_cmd_resp_pkt[idx]);
+        sc->sc_cmd_resp_pkt[idx] = nullptr;
+        sc->sc_cmd_resp_len[idx] = 0;
+    }
+#endif
     splx(s);
     
     return err;
@@ -728,11 +801,17 @@ iwm_cmd_done(struct iwm_softc *sc, int qid, int idx, int code)
     struct iwm_tx_ring *ring = &sc->txq[sc->cmdqid];
     struct iwm_tx_data *data;
     
-    if (qid != sc->cmdqid) {
+    if (qid != sc->cmdqid || idx < 0 || idx >= IWM_TX_RING_COUNT) {
         return;    /* Not a command ack. */
     }
     
     data = &ring->data[idx];
+#ifdef AIRPORT_VTD
+    if (!data->commandPending)
+        return;
+    data->commandPending = false;
+#endif
+
     
     if (data->m != NULL) {
         //        bus_dmamap_sync(sc->sc_dmat, data->map, 0,
@@ -742,7 +821,11 @@ iwm_cmd_done(struct iwm_softc *sc, int qid, int idx, int code)
         data->m = NULL;
         mbuf_freem(m);
     }
+#ifdef AIRPORT_VTD
+    getMainCommandGate()->commandWakeup(&ring->desc[idx]);
+#else
     wakeupOn(&ring->desc[idx]);
+#endif
     
     DPRINTFN(2, ("%s: command 0x%x done\n", __func__, code));
     

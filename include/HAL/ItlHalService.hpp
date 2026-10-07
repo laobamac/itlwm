@@ -23,6 +23,9 @@
 #include <IOKit/pci/IOPCIDevice.h>
 #include <IOKit/network/IOEthernetController.h>
 #include <IOKit/network/IOEthernetInterface.h>
+#ifdef AIRPORT_VTD
+#include <ItlDma.hpp>
+#endif
 
 #include "ItlDriverInfo.hpp"
 #include "ItlDriverController.hpp"
@@ -64,6 +67,13 @@ protected:
     IOCommandGate *getMainCommandGate();
     
     IOWorkLoop *getMainWorkLoop();
+
+#ifdef AIRPORT_VTD
+    bool prepareDma(IOPCIDevice *device, uint8_t addressBits);
+    ItlDmaArena *dmaArena;
+    uint64_t dmaEpoch;
+    bool dmaDetaching;
+#endif
     
 private:
     IOEthernetController *controller;

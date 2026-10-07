@@ -146,6 +146,11 @@ bool ItlIwx::attach(IOPCIDevice *device)
 {
     pci.pa_tag = device;
     pci.workloop = getMainWorkLoop();
+#ifdef AIRPORT_VTD
+    if (!prepareDma(device, 36))
+        return false;
+    pci.pa_dmat = dmaArena;
+#endif
     if (!iwx_attach(&com, &pci)) {
         detach(device);
         releaseAll();
@@ -157,17 +162,56 @@ bool ItlIwx::attach(IOPCIDevice *device)
 void ItlIwx::
 detach(IOPCIDevice *device)
 {
+#ifdef AIRPORT_VTD
+    getMainCommandGate()->runAction(
+        [](OSObject *, void *arg0, void *arg1, void *, void *) -> IOReturn {
+            auto that = static_cast<ItlIwx *>(arg0);
+            auto pci = static_cast<IOPCIDevice *>(arg1);
+            that->dmaDetaching = true;
+            that->dmaEpoch++;
+            that->com.sc_ic.ic_ac.ac_if.if_flags &= ~(IFF_UP | IFF_RUNNING);
+            that->com.sc_ic.ic_state = IEEE80211_S_INIT;
+            timeout_del(&that->com.sc_ic.ic_bgscan_timeout);
+            that->com.sc_flags |= IWX_FLAG_SHUTDOWN;
+            that->com.sc_generation++;
+            pci->setBusMasterEnable(false);
+            auto intr = that->com.ih;
+            if (intr && intr->intr)
+                intr->intr->disable();
+            for (unsigned int i = 0; i < nitems(that->com.txq); i++)
+                that->iwx_reset_tx_ring(&that->com, &that->com.txq[i]);
+            return kIOReturnSuccess;
+        }, this, device);
+#endif
     struct _ifnet *ifp = &com.sc_ic.ic_ac.ac_if;
     struct iwx_softc *sc = &com;
+#ifdef AIRPORT_VTD
+    releaseAll();
+    taskq_destroy(systq);
+    taskq_destroy(com.sc_nswq);
+#endif
     
     for (int txq_i = 0; txq_i < nitems(sc->txq); txq_i++)
         iwx_free_tx_ring(sc, &sc->txq[txq_i]);
     iwx_free_rx_ring(sc, &sc->rxq);
     iwx_dma_contig_free(&sc->ict_dma);
     iwx_dma_contig_free(&com.ctxt_info_dma);
+#ifdef AIRPORT_VTD
+    iwx_ctxt_info_free_fw_img(sc);
+    iwx_ctxt_info_free_paging(sc);
+    iwx_dma_contig_free(&sc->prph_info_dma);
+    iwx_dma_contig_free(&sc->prph_scratch_dma);
+    iwx_dma_contig_free(&sc->iml_dma);
+    iwx_dma_contig_free(&sc->pnvm_dram);
+    iwx_dma_contig_free(&sc->fw_mon);
+    if (sc->sc_dmat)
+        sc->sc_dmat->reclaim();
+#endif
     ieee80211_ifdetach(ifp);
+#ifndef AIRPORT_VTD
     taskq_destroy(systq);
     taskq_destroy(com.sc_nswq);
+#endif
     releaseAll();
 }
 
@@ -2333,8 +2377,17 @@ iwx_clear_bits_prph(struct iwx_softc *sc, uint32_t reg, uint32_t bits)
     iwx_set_bits_mask_prph(sc, reg, 0, ~bits);
 }
 
-bool allocDmaMemory2(struct iwx_dma_info *dma, size_t size, int alignment)
+bool allocDmaMemory2(bus_dma_tag_t tag, struct iwx_dma_info *dma, size_t size, int alignment)
 {
+#ifdef AIRPORT_VTD
+    if (!tag || !dma || size > UINT32_MAX || alignment < 0 ||
+        !tag->allocate(static_cast<uint32_t>(size), alignment, dma->mapping))
+        return false;
+    dma->vaddr = dma->mapping.vaddr;
+    dma->paddr = dma->mapping.address;
+    dma->size = static_cast<bus_size_t>(size);
+    return true;
+#else
     IOBufferMemoryDescriptor *bmd;
     IODMACommand::Segment64 seg;
     UInt64 ofs = 0;
@@ -2378,13 +2431,14 @@ bool allocDmaMemory2(struct iwx_dma_info *dma, size_t size, int alignment)
     dma->cmd = cmd;
     memset(dma->vaddr, 0, dma->size);
     return true;
+#endif
 }
 
 int ItlIwx::
 iwx_dma_contig_alloc(bus_dma_tag_t tag, struct iwx_dma_info *dma,
                      bus_size_t size, bus_size_t alignment)
 {
-    if (!allocDmaMemory2(dma, size, alignment)) {
+    if (!allocDmaMemory2(tag, dma, size, alignment)) {
         return 1;
     }
     
@@ -2394,6 +2448,16 @@ iwx_dma_contig_alloc(bus_dma_tag_t tag, struct iwx_dma_info *dma,
 void ItlIwx::
 iwx_dma_contig_free(struct iwx_dma_info *dma)
 {
+#ifdef AIRPORT_VTD
+    if (!dma)
+        return;
+    if (dma->mapping.arena)
+        dma->mapping.arena->deallocate(dma->mapping);
+    dma->vaddr = nullptr;
+    dma->paddr = 0;
+    dma->size = 0;
+    return;
+#endif
     if (dma == NULL || dma->cmd == NULL)
         return;
     if (dma->vaddr == NULL)
@@ -3138,6 +3202,11 @@ iwx_conf_msix_hw(struct iwx_softc *sc, int stopped)
 int ItlIwx::
 iwx_start_hw(struct iwx_softc *sc)
 {
+#ifdef AIRPORT_VTD
+    if (dmaDetaching)
+        return ENXIO;
+    sc->sc_pcitag->setBusMasterEnable(true);
+#endif
     XYLog("%s\n", __FUNCTION__);
     int err;
     
@@ -3196,6 +3265,9 @@ iwx_stop_device(struct iwx_softc *sc)
         return;
     }
 
+#ifdef AIRPORT_VTD
+    dmaEpoch++;
+#endif
     XYLog("%s\n", __FUNCTION__);
     int qid;
     
@@ -3203,9 +3275,11 @@ iwx_stop_device(struct iwx_softc *sc)
     sc->sc_flags &= ~IWX_FLAG_USE_ICT;
     
     iwx_disable_rx_dma(sc);
+#ifndef AIRPORT_VTD
     iwx_reset_rx_ring(sc, &sc->rxq);
     for (qid = 0; qid < nitems(sc->txq); qid++)
         iwx_reset_tx_ring(sc, &sc->txq[qid]);
+#endif
     
     /* Make sure (redundant) we've released our request to stay awake */
     IWX_CLRBITS(sc, IWX_CSR_GP_CNTRL,
@@ -3221,6 +3295,12 @@ iwx_stop_device(struct iwx_softc *sc)
     /* Reset the on-board processor. */
     IWX_SETBITS(sc, IWX_CSR_RESET, IWX_CSR_RESET_REG_FLAG_SW_RESET);
     DELAY(5000);
+#ifdef AIRPORT_VTD
+    sc->sc_pcitag->setBusMasterEnable(false);
+    iwx_reset_rx_ring(sc, &sc->rxq);
+    for (qid = 0; qid < nitems(sc->txq); qid++)
+        iwx_reset_tx_ring(sc, &sc->txq[qid]);
+#endif
     
     /*
      * Upon stop, the IVAR table gets erased, so msi-x won't
@@ -3249,6 +3329,9 @@ iwx_stop_device(struct iwx_softc *sc)
     iwx_dma_contig_free(&sc->prph_scratch_dma);
     iwx_dma_contig_free(&sc->iml_dma);
     iwx_dma_contig_free(&sc->pnvm_dram);
+#ifdef AIRPORT_VTD
+    sc->sc_dmat->reclaim();
+#endif
 }
 
 void ItlIwx::
@@ -3414,6 +3497,10 @@ iwx_tvqm_alloc_txq(struct iwx_softc *sc, int tid, int ssn)
         queue = iwx_tvqm_enable_txq(sc, tid, ssn, size);
         if (generation != sc->sc_generation)
             return -ENXIO;
+#ifdef AIRPORT_VTD
+        if (queue < 0 && queue != -ENOMEM)
+            return queue;
+#endif
         if (queue < 0)
             XYLog("Failed allocating TXQ of size %d for sta %d tid %d, ret: %d\n",
                   size, IWX_STATION_ID, tid, queue);
@@ -3429,7 +3516,24 @@ iwx_tvqm_alloc_txq(struct iwx_softc *sc, int tid, int ssn)
 int ItlIwx::
 iwx_tvqm_enable_txq(struct iwx_softc *sc, int tid, int ssn, uint32_t size)
 {
+#ifdef AIRPORT_VTD
+    if (!getMainWorkLoop()->inGate()) {
+        struct Request { iwx_softc *sc; int tid; int ssn; uint32_t size; } request = {sc, tid, ssn, size};
+        return getMainCommandGate()->runAction(
+            [](OSObject *, void *arg0, void *arg1, void *, void *) -> IOReturn {
+                auto request = static_cast<Request *>(arg1);
+                return static_cast<ItlIwx *>(arg0)->iwx_tvqm_enable_txq(
+                    request->sc, request->tid, request->ssn, request->size);
+            }, this, &request);
+    }
+    if (dmaDetaching || !size || size > IWX_MIN_256_BA_QUEUE_SIZE_GEN3 || (size & (size - 1)))
+        return -EINVAL;
+    uint64_t epoch = dmaEpoch;
+#endif
     int err = -1;
+#ifdef AIRPORT_VTD
+    bool submitted = false;
+#endif
     int i = 0;
     bus_addr_t paddr;
     int fwqid;
@@ -3447,7 +3551,13 @@ iwx_tvqm_enable_txq(struct iwx_softc *sc, int tid, int ssn, uint32_t size)
         .flags = IWX_CMD_WANT_RESP,
         .resp_pkt_len = sizeof(*pkt) + sizeof(*resp),
     };
+#ifdef AIRPORT_VTD
+    auto ring = new iwx_tx_ring();
+    if (!ring)
+        return -ENOMEM;
+#else
     struct iwx_tx_ring *ring = &sc->sc_tvqm_ring;
+#endif
     
     memset(ring, 0, sizeof(*ring));
     ring->qid = IWX_INVALID_QUEUE;
@@ -3505,7 +3615,14 @@ iwx_tvqm_enable_txq(struct iwx_softc *sc, int tid, int ssn, uint32_t size)
     hcmd.data[0] = &cmd;
     hcmd.len[0] = sizeof(cmd);
 
+#ifdef AIRPORT_VTD
+    submitted = true;
+#endif
     err = iwx_send_cmd(sc, &hcmd);
+#ifdef AIRPORT_VTD
+    if (epoch != dmaEpoch)
+        err = ENXIO;
+#endif
     if (err) {
         err = -err;
         goto fail;
@@ -3533,17 +3650,35 @@ iwx_tvqm_enable_txq(struct iwx_softc *sc, int tid, int ssn, uint32_t size)
         err = -EIO;
         goto fail;
     }
+#ifdef AIRPORT_VTD
+    if (fwqid <= IWX_QID_MGMT || sc->txq[fwqid].queued || wr_idx >= getTxQueueSize()) {
+        err = -EIO;
+        goto fail;
+    }
+#endif
     ring->cur = wr_idx;
     ring->qid = fwqid;
     iwx_reset_tx_ring(sc, &sc->txq[fwqid]);
     iwx_free_tx_ring(sc, &sc->txq[fwqid]);
     memcpy(&sc->txq[fwqid], ring, sizeof(*ring));
+#ifdef AIRPORT_VTD
+    delete ring;
+#endif
     iwx_free_resp(sc, &hcmd);
     return fwqid;
 fail:
+#ifdef AIRPORT_VTD
+    if (submitted)
+        sc->sc_dmat->deferRecycling();
+#endif
     iwx_free_resp(sc, &hcmd);
+#ifndef AIRPORT_VTD
     iwx_reset_tx_ring(sc, ring);
+#endif
     iwx_free_tx_ring(sc, ring);
+#ifdef AIRPORT_VTD
+    delete ring;
+#endif
     return err;
 }
 
@@ -4764,6 +4899,9 @@ iwx_load_firmware(struct iwx_softc *sc)
     if (!err && !sc->sc_uc.uc_ok)
         err = EIO;
     if (err || !sc->sc_uc.uc_ok) {
+#ifdef AIRPORT_VTD
+        sc->sc_dmat->deferRecycling();
+#endif
         if (iwx_nic_lock(sc)) {
             XYLog("SecBoot CPU1 Status: 0x%x, CPU2 Status: 0x%x\n",
                   iwx_read_umac_prph(sc, IWX_UMAG_SB_CPU_1_STATUS),
@@ -5025,7 +5163,7 @@ iwx_rx_addbuf(struct iwx_softc *sc, int size, int idx)
         XYLog("could not allocate RX mbuf\n");
         return ENOMEM;
     }
-    data->map->dm_nsegs = data->map->cursor->getPhysicalSegments(m, &data->map->dm_segs[0], 1);
+    data->map->dm_nsegs = bus_dmamap_packet(data->map, m, &data->map->dm_segs[0], 1, true);
     if (data->map->dm_nsegs == 0) {
         /* XXX */
         if (fatal)
@@ -6361,11 +6499,18 @@ iwx_send_cmd(struct iwx_softc *sc, struct iwx_host_cmd *hcmd)
     size_t hdrlen, datasz;
     uint8_t *data;
     int generation = sc->sc_generation;
+#ifdef AIRPORT_VTD
+    uint64_t epoch = dmaEpoch;
+#endif
     unsigned int max_chunks = 1;
     IOPhysicalSegment seg;
     AbsoluteTime deadline;
 
     hcmd->resp_pkt = NULL;
+#ifdef AIRPORT_VTD
+    if (dmaDetaching)
+        return ENXIO;
+#endif
     if ((sc->sc_flags & (IWX_FLAG_SHUTDOWN | IWX_FLAG_HW_ERR)) ||
         ring->ring_count == 0)
         return ENXIO;
@@ -6443,7 +6588,7 @@ iwx_send_cmd(struct iwx_softc *sc, struct iwx_host_cmd *hcmd)
         mbuf_setlen(m, totlen);
         mbuf_pkthdr_setlen(m, totlen);
         cmd = mtod(m, struct iwx_device_cmd *);
-        txdata->map->dm_nsegs = txdata->map->cursor->getPhysicalSegmentsWithCoalesce(m, &seg, 1);
+        txdata->map->dm_nsegs = bus_dmamap_packet(txdata->map, m, &seg, 1, false);
         if (txdata->map->dm_nsegs == 0) {
             XYLog("%s: could not load fw cmd mbuf (%zd bytes)\n",
                   DEVNAME(sc), totlen);
@@ -6475,6 +6620,13 @@ iwx_send_cmd(struct iwx_softc *sc, struct iwx_host_cmd *hcmd)
         off += hcmd->len[i];
     }
     KASSERT(off == paylen, "off == paylen");
+    if (paylen > datasz && !bus_dmamap_write(txdata->map, txdata->m)) {
+        mbuf_freem(txdata->m);
+        txdata->m = nullptr;
+        err = EIO;
+        goto out;
+    }
+
     
     desc->tbs[0].tb_len = htole16(MIN(hdrlen + paylen, IWX_FIRST_TB_SIZE));
     addr = htole64(paddr);
@@ -6522,6 +6674,10 @@ iwx_send_cmd(struct iwx_softc *sc, struct iwx_host_cmd *hcmd)
             }
         }
         /* Reset owns the old buffers, including after a timed-out sleep. */
+#ifdef AIRPORT_VTD
+        if (epoch != dmaEpoch)
+            return ENXIO;
+#endif
         if (generation != sc->sc_generation)
             return ENXIO;
         txdata->flags &= ~IWX_TXDATA_FLAG_CMD_WAITING;
@@ -6822,12 +6978,24 @@ iwx_tx(struct iwx_softc *sc, mbuf_t m, struct ieee80211_node *ni, int ac)
         }
     }
 
+#ifdef AIRPORT_VTD
+    if (dmaDetaching || qid < 0 || qid >= nitems(sc->txq)) {
+        mbuf_freem(m);
+        return ENXIO;
+    }
+#endif
     ring = &sc->txq[qid];
     if (ring->ring_count == 0) {
         mbuf_freem(m);
         return EINVAL;
     }
     idx = (ring->cur & (ring->ring_count - 1));
+#ifdef AIRPORT_VTD
+    if (!ring->desc || ring->data[idx].m || ring->queued >= ring->ring_count - 1) {
+        mbuf_freem(m);
+        return ENOBUFS;
+    }
+#endif
     desc = &ring->desc[idx];
     memset(desc, 0, sizeof(*desc));
     data = &ring->data[idx];
@@ -6915,7 +7083,7 @@ iwx_tx(struct iwx_softc *sc, mbuf_t m, struct ieee80211_node *ni, int ac)
     /* Trim 802.11 header. */
     mbuf_adj(m, hdrlen);
     
-    nsegs = data->map->cursor->getPhysicalSegmentsWithCoalesce(m, &segs[0], IWX_TFH_NUM_TBS - 2);
+    nsegs = bus_dmamap_packet(data->map, m, &segs[0], IWX_TFH_NUM_TBS - 2, false);
     if (nsegs == 0) {
         XYLog("%s: can't map mbuf (error %d)\n", DEVNAME(sc),
               nsegs);
@@ -11148,6 +11316,10 @@ iwx_rx_pkt(struct iwx_softc *sc, struct iwx_rx_data *data, struct mbuf_list *ml)
     //    bus_dmamap_sync(sc->sc_dmat, data->map, 0, IWX_RBUF_SIZE,
     //        BUS_DMASYNC_POSTREAD);
     
+    if (!bus_dmamap_read(data->map, data->m, IWX_RBUF_SIZE)) {
+        ifp->netStat->inputErrors++;
+        return;
+    }
     m0 = data->m;
     while (m0 && offset + minsz < IWX_RBUF_SIZE) {
         handled = 1;

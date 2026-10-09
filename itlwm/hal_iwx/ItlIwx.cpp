@@ -4982,7 +4982,7 @@ int ItlIwx::
 iwx_send_phy_cfg_cmd(struct iwx_softc *sc)
 {
     XYLog("%s\n", __FUNCTION__);
-    struct iwx_phy_cfg_cmd_v3 phy_cfg_cmd;
+    struct iwx_phy_cfg_cmd_v3 phy_cfg_cmd = {};
     uint8_t cmdver;
     
     phy_cfg_cmd.phy_cfg = htole32(sc->sc_fw_phy_config);
@@ -5074,6 +5074,19 @@ iwx_run_init_mvm_ucode(struct iwx_softc *sc, int readnvm)
                                            IWX_NVM_ACCESS_COMPLETE), IWX_CMD_SEND_IN_RFKILL, sizeof(nvm_complete), &nvm_complete);
     if (err)
         return err;
+
+    /*
+     * Devices with SISO diversity (AX101) set IWX_INIT_PHY above and the
+     * firmware waits for PHY_CONFIGURATION_CMD before INIT_COMPLETE.
+     */
+    if (sc->sc_tx_with_siso_diversity) {
+        err = iwx_send_phy_cfg_cmd(sc);
+        if (err) {
+            XYLog("%s: could not send init phy config (error %d)\n",
+                  DEVNAME(sc), err);
+            return err;
+        }
+    }
 
     /* INIT_COMPLETE can arrive before NVM_ACCESS_COMPLETE is acknowledged. */
     err = iwx_wait_notification(sc, &sc->sc_init_complete, wait_flags, 2000);
@@ -10518,14 +10531,11 @@ iwx_init_hw(struct iwx_softc *sc)
     
     iwx_toggle_tx_ant(sc, &sc->sc_mgmt_last_antenna_idx);
     
-    if (sc->sc_tx_with_siso_diversity) {
-        err = iwx_send_phy_cfg_cmd(sc);
-        if (err) {
-            XYLog("%s: could not send phy config (error %d)\n",
-                   DEVNAME(sc), err);
-            goto err;
-        }
-    }
+    /*
+     * PHY_CONFIGURATION_CMD for SISO diversity devices is sent during the
+     * init flow (iwx_run_init_mvm_ucode), like Linux does for unified
+     * firmware. Sending it again here triggers a firmware assert on AX101.
+     */
     
     err = iwx_send_bt_init_conf(sc);
     if (err) {

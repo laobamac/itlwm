@@ -1623,6 +1623,14 @@ justcleanup:
 				ieee80211_set_link_state(ic, LINK_STATE_UP);
 				ni->ni_assoc_fail = 0;
 			}
+			/*
+			 * The 4-way handshake can complete before the
+			 * ASSOC -> RUN transition (seen on 5GHz with VHT).
+			 * The state change above forced the link down, so
+			 * restore it if the port is already valid.
+			 */
+			if (ni->ni_port_valid)
+				ieee80211_set_link_state(ic, LINK_STATE_UP);
             ni->ni_fails = 0;
             ni = ieee80211_find_node(ic, ni->ni_macaddr);
             if (ni)

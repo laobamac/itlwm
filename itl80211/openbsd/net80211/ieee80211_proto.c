@@ -1607,7 +1607,7 @@ justcleanup:
                     " HE enabled" : "");
 			}
 #if defined(AIRPORT_WCL)
-            if (!(ic->ic_flags & IEEE80211_F_RSNON)) {
+            if (!(ic->ic_flags & IEEE80211_F_RSNON) || ni->ni_port_valid) {
 #elif defined(USE_APPLE_SUPPLICANT)
             {
 #elif (defined IO80211FAMILY_V2)
@@ -1642,6 +1642,13 @@ ieee80211_set_link_state(struct ieee80211com *ic, int nstate)
 {
 	struct _ifnet *ifp = &ic->ic_if;
     int link_state;
+
+#ifdef AIRPORT_WCL
+    if (ic->ic_opmode == IEEE80211_M_STA &&
+        (ic->ic_flags & IEEE80211_F_RSNON) &&
+        nstate == LINK_STATE_UP && ic->ic_state != IEEE80211_S_RUN)
+        return;
+#endif
     
 	switch (ic->ic_opmode) {
 #ifndef IEEE80211_STA_ONLY

@@ -1343,7 +1343,16 @@ ieee80211_newstate(struct ieee80211com *ic, enum ieee80211_state nstate,
 		    ieee80211_state_name[ostate], ieee80211_state_name[nstate]);
 	ic->ic_state = nstate;			/* state transition */
 	ni = ic->ic_bss;			/* NB: no reference held */
-	ieee80211_set_link_state(ic, LINK_STATE_DOWN);
+	/*
+	 * The 4-way handshake can complete before the ASSOC -> RUN
+	 * transition (seen on 5GHz with VHT). Forcing the link down
+	 * here would stop output and report a disconnect, so keep the
+	 * link up when the port is already valid.
+	 */
+	if (!(ic->ic_opmode == IEEE80211_M_STA &&
+	    ostate == IEEE80211_S_ASSOC && nstate == IEEE80211_S_RUN &&
+	    ni->ni_port_valid))
+		ieee80211_set_link_state(ic, LINK_STATE_DOWN);
 	ic->ic_xflags &= ~IEEE80211_F_TX_MGMT_ONLY;
 	switch (nstate) {
 	case IEEE80211_S_INIT:
@@ -1607,18 +1616,22 @@ justcleanup:
                     " HE enabled" : "");
 			}
 #if defined(AIRPORT_WCL)
-            if (!(ic->ic_flags & IEEE80211_F_RSNON)) {
+            if (!(ic->ic_flags & IEEE80211_F_RSNON) ||
+                ni->ni_port_valid) {
 #elif defined(USE_APPLE_SUPPLICANT)
             {
 #elif (defined IO80211FAMILY_V2)
             if (ieee80211_is_8021x_akm((enum ieee80211_akm)ni->ni_rsnakms) ||
-                !(ic->ic_flags & IEEE80211_F_RSNON)) {
+                !(ic->ic_flags & IEEE80211_F_RSNON) ||
+                ni->ni_port_valid) {
 #else
-			if (!(ic->ic_flags & IEEE80211_F_RSNON)) {
+			if (!(ic->ic_flags & IEEE80211_F_RSNON) ||
+			    ni->ni_port_valid) {
 #endif
 				/*
 				 * NB: When RSN is enabled, we defer setting
-				 * the link up until the port is valid.
+				 * the link up until the port is valid, unless
+				 * the 4-way handshake already completed.
 				 */
 				ieee80211_set_link_state(ic, LINK_STATE_UP);
 				ni->ni_assoc_fail = 0;

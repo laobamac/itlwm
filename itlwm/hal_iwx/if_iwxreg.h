@@ -7453,6 +7453,7 @@ struct iwx_umac_scan_iter_complete_notif {
 #define IWX_STA_FLG_REDUCED_TX_PWR_DATA    (1 << 6)
 
 #define IWX_STA_FLG_DISABLE_TX        (1 << 4)
+#define IWX_STA_FLG_MFP_EN        (1 << 5)
 
 #define IWX_STA_FLG_PS            (1 << 8)
 #define IWX_STA_FLG_DRAIN_FLOW        (1 << 12)

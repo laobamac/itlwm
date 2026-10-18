@@ -898,8 +898,14 @@ IOReturn AirportItlwmSkywalkInterface::setWCL_UPDATE_FAST_LANE(apple80211_fastla
 {
     if (!data)
         return kIOReturnBadArgument;
-    const auto bytes = reinterpret_cast<const uint8_t *>(data);
-    return (bytes[0] || bytes[1]) ? kIOReturnUnsupported : kIOReturnSuccess;
+    /*
+     * Cisco/Apple Fast Lane: macOS asks the driver to enable it right after
+     * the association completes when the AP advertises it (e.g. Aironet 3800).
+     * This adapter has no Fast Lane QoS marking, but returning an error here
+     * makes WCL treat it as "Update Bss fail" and tear the link down ~0.4 s
+     * after LINK_STATE_IS_UP. Accept the request and ignore it.
+     */
+    return kIOReturnSuccess;
 }
 
 IOReturn AirportItlwmSkywalkInterface::getWCL_LOW_LATENCY_INFO(apple80211_low_latency_info *data)

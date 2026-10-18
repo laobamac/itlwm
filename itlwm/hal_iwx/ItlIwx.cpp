@@ -7483,6 +7483,10 @@ iwx_add_sta_cmd(struct iwx_softc *sc, struct iwx_node *in, int update)
     add_sta_cmd.add_modify = update ? 1 : 0;
     add_sta_cmd.station_flags_msk
     |= htole32(IWX_STA_FLG_FAT_EN_MSK | IWX_STA_FLG_MIMO_EN_MSK);
+    /* Let the firmware encrypt/decrypt robust unicast management frames. */
+    add_sta_cmd.station_flags_msk |= htole32(IWX_STA_FLG_MFP_EN);
+    if (in->in_ni.ni_flags & IEEE80211_NODE_MFP)
+        add_sta_cmd.station_flags |= htole32(IWX_STA_FLG_MFP_EN);
     add_sta_cmd.tid_disable_tx = htole16(0xffff);
         
     if ((in->in_ni.ni_flags & IEEE80211_NODE_HT) ||
@@ -13649,7 +13653,8 @@ iwx_attach(struct iwx_softc *sc, struct pci_attach_args *pa)
     IEEE80211_C_SCANALLBAND |    /* device scans all bands at once */
     IEEE80211_C_MONITOR |    /* monitor mode supported */
     IEEE80211_C_SHSLOT |    /* short slot time supported */
-    IEEE80211_C_SHPREAMBLE;    /* short preamble supported */
+    IEEE80211_C_SHPREAMBLE |    /* short preamble supported */
+    IEEE80211_C_MFP;        /* 802.11w management frame protection */
     
     ic->ic_htcaps = IEEE80211_HTCAP_SGI20;
     ic->ic_htcaps |=

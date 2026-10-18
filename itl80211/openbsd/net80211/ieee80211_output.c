@@ -1079,7 +1079,16 @@ ieee80211_add_rsn_body(u_int8_t *frm, struct ieee80211com *ic,
     /* write RSN Capabilities field */
     rsncaps = (ni->ni_rsncaps & (IEEE80211_RSNCAP_PTKSA_RCNT_MASK |
         IEEE80211_RSNCAP_GTKSA_RCNT_MASK));
-    if (ic->ic_caps & IEEE80211_C_MFP) {
+    /*
+     * As a station only advertise MFP (and the Group Management Cipher
+     * Suite) when the AP supports it too. An RSN IE with MFPC set and an
+     * extra group management cipher is rejected by APs with PMF disabled
+     * (Cisco 3800: Deauth reason 46 right after association).
+     */
+    int mfp = (ic->ic_caps & IEEE80211_C_MFP) &&
+        (ic->ic_opmode != IEEE80211_M_STA ||
+         (ni->ni_flags & IEEE80211_NODE_MFP));
+    if (mfp) {
         rsncaps |= IEEE80211_RSNCAP_MFPC;
         if (ic->ic_flags & IEEE80211_F_MFPR)
             rsncaps |= IEEE80211_RSNCAP_MFPR;
@@ -1096,7 +1105,7 @@ ieee80211_add_rsn_body(u_int8_t *frm, struct ieee80211com *ic,
         frm += IEEE80211_PMKID_LEN;
     }
 
-    if (!(ic->ic_caps & IEEE80211_C_MFP))
+    if (!mfp)
         return frm;
 
     if ((ni->ni_flags & IEEE80211_NODE_PMKID) == 0) {
@@ -1531,6 +1540,9 @@ ieee80211_get_assoc_req(struct ieee80211com *ic, struct ieee80211_node *ni,
 	mbuf_t m;
 	u_int8_t *frm;
 	u_int16_t capinfo;
+	/* VHT is only defined for 5 GHz; do not advertise it on 2.4 GHz. */
+	int vht_on = (ic->ic_flags & IEEE80211_F_VHTON) &&
+	    !IEEE80211_IS_CHAN_2GHZ(ni->ni_chan);
 
 	m = ieee80211_getmgmt(MBUF_DONTWAIT, MT_DATA,
 	    2 + 2 +
@@ -1548,7 +1560,7 @@ ieee80211_get_assoc_req(struct ieee80211com *ic, struct ieee80211_node *ni,
 	      (ni->ni_rsnprotos & IEEE80211_PROTO_WPA)) ?
 		2 + IEEE80211_WPAIE_MAXLEN : 0) +
 	    ((ic->ic_flags & IEEE80211_F_HTON) ? sizeof(struct ieee80211_ie_htcap) + sizeof(struct ieee80211_wme_info) : 0) +
-        ((ic->ic_flags & IEEE80211_F_VHTON) ? sizeof(struct ieee80211_ie_vhtcap) + 2 : 0) +
+        (vht_on ? sizeof(struct ieee80211_ie_vhtcap) + 2 : 0) +
         ((ic->ic_flags & IEEE80211_F_HEON) ? (sizeof(struct ieee80211_he_cap_elem) + 2 + 1 + sizeof(struct ieee80211_he_mcs_nss_supp) + IEEE80211_HE_PPE_THRES_MAX_LEN) : 0));
 	if (m == NULL)
 		return NULL;
@@ -1601,7 +1613,7 @@ ieee80211_get_assoc_req(struct ieee80211com *ic, struct ieee80211_node *ni,
 		frm = ieee80211_add_wme_info(frm, ic);
 	}
     
-    if (ic->ic_flags & IEEE80211_F_VHTON)
+    if (vht_on)
         frm = ieee80211_add_vhtcaps(frm, ic);
     
     ni->ni_he_requested = ieee80211_he_supported(ic, ni);
@@ -1611,6 +1623,14 @@ ieee80211_get_assoc_req(struct ieee80211com *ic, struct ieee80211_node *ni,
     size_t l = frm - mtod(m, u_int8_t *);
     mbuf_pkthdr_setlen(m, l);
     mbuf_setlen(m, l);
+
+#if defined(AIRPORT_WCL) && defined(DEBUG)
+    XYLog("%s capinfo=0x%04x listen=%d rates=%d ht=%d wmm=%d vht=%d he=%d len=%zu\n",
+        __FUNCTION__, (unsigned int)capinfo, ic->ic_lintval, rs->rs_nrates,
+        !!(ic->ic_flags & IEEE80211_F_HTON),
+        !!(ic->ic_flags & IEEE80211_F_HTON),
+        !!vht_on, ni->ni_he_requested, l);
+#endif
 
 	return m;
 }

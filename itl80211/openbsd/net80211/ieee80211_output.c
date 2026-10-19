@@ -1612,6 +1612,14 @@ ieee80211_get_assoc_req(struct ieee80211com *ic, struct ieee80211_node *ni,
     mbuf_pkthdr_setlen(m, l);
     mbuf_setlen(m, l);
 
+#if defined(AIRPORT_WCL) && defined(DEBUG)
+    XYLog("%s capinfo=0x%04x listen=%d rates=%d ht=%d wmm=%d vht=%d he=%d len=%zu\n",
+        __FUNCTION__, (unsigned int)capinfo, ic->ic_lintval, rs->rs_nrates,
+        !!(ic->ic_flags & IEEE80211_F_HTON),
+        !!(ic->ic_flags & IEEE80211_F_HTON),
+        !!(ic->ic_flags & IEEE80211_F_VHTON), ni->ni_he_requested, l);
+#endif
+
 	return m;
 }
 

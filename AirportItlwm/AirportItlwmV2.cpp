@@ -766,7 +766,9 @@ UInt32 AirportItlwm::enqueuePacket(mbuf_t m)
 {
     auto ic = fHalService->get80211Controller();
     auto ifp = &ic->ic_ac.ac_if;
-    if (ic->ic_state == IEEE80211_S_RUN && ifp->if_snd.queue &&
+    // EAPOL frames must flow as soon as the association completes, before
+    // net80211 has fully transitioned to S_RUN (802.1X supplicant timing).
+    if (ic->ic_state >= IEEE80211_S_ASSOC && ifp->if_snd.queue &&
         m && mbuf_type(m) != MBUF_TYPE_FREE && (mbuf_flags(m) & MBUF_PKTHDR) &&
         ifp->if_snd.queue->lockEnqueue(m))
         return kIOReturnOutputSuccess;

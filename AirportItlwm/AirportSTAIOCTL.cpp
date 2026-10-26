@@ -647,7 +647,9 @@ getBSSID(OSObject *object,
                          struct apple80211_bssid_data *bd)
 {
     struct ieee80211com *ic = fHalService->get80211Controller();
-    if (ic->ic_state == IEEE80211_S_RUN) {
+    // 802.1X supplicant queries the BSSID as soon as WCL reports the link up,
+    // which can race net80211 reaching S_RUN.
+    if (ic->ic_state >= IEEE80211_S_ASSOC && ic->ic_bss != NULL) {
         memset(bd, 0, sizeof(*bd));
         bd->version = APPLE80211_VERSION;
         memcpy(bd->bssid.octet, ic->ic_bss->ni_bssid, APPLE80211_ADDR_LEN);

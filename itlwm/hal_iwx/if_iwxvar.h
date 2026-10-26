@@ -111,6 +111,7 @@
 #include <IOKit/network/IOMbufMemoryCursor.h>
 #include <IOKit/IODMACommand.h>
 #include <HAL/ItlTx.hpp>
+#include "iwx_pnvm.h"
 
 #define IWL_CFG_ANY (~0)
 
@@ -660,12 +661,17 @@ struct iwx_softc {
     struct iwx_dma_info prph_info_dma;
     struct iwx_dma_info iml_dma;
     struct iwx_dma_info pnvm_dram;
+    struct iwx_dma_info pnvm_payload_dram[IWX_PNVM_MAX_CHUNKS];
+    uint32_t pnvm_payload_count;
+    bool sc_mtl;
+    uint32_t sc_pnvm_status;
 
 	int sc_fw_chunk_done;
 	int sc_init_complete;
 #define IWX_INIT_COMPLETE	0x01
 #define IWX_CALIB_COMPLETE	0x02
 #define IWX_PNVM_COMPLETE    0x04
+#define IWX_STATISTICS_COMPLETE 0x08
 
 	struct iwx_ucode_status sc_uc;
 	char sc_fwver[32];
@@ -722,6 +728,18 @@ struct iwx_softc {
 
 	uint8_t *sc_cmd_resp_pkt[IWX_TFD_QUEUE_SIZE_MAX_GEN3];	
 	size_t sc_cmd_resp_len[IWX_TFD_QUEUE_SIZE_MAX_GEN3];
+    uint8_t sc_cmd_error[IWX_TFD_QUEUE_SIZE_MAX_GEN3];
+    uint8_t sc_mld_key_slot[IWX_TFD_QUEUE_SIZE_MAX_GEN3];
+    uint32_t sc_mld_key_slot_generation[IWX_TFD_QUEUE_SIZE_MAX_GEN3];
+    uint32_t sc_mld_key_pending;
+    uint32_t sc_mld_key_error;
+    uint32_t sc_mld_key_generation;
+    uint8_t sc_mld_key_timer;
+    bool sc_mld_aux_active;
+    bool sc_mld_queue_active[IWX_MAX_TVQM_QUEUES];
+    uint8_t sc_mld_queue_owner[IWX_MAX_TVQM_QUEUES];
+    uint8_t sc_mld_queue_tid[IWX_MAX_TVQM_QUEUES];
+    uint16_t sc_mld_aux_qid;
 	int sc_nic_locks;
 
 	struct taskq *sc_nswq;
@@ -776,6 +794,10 @@ struct iwx_node {
 
 	uint16_t in_id;
 	uint16_t in_color;
+    uint16_t in_mld_link_id;
+    bool in_mld_link_present;
+    bool in_mld_link_active;
+    bool in_mld_beacon_timing_set;
     
     struct iwx_rxq_dup_data dup_data;
 };

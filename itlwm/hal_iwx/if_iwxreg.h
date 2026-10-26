@@ -1387,6 +1387,9 @@ enum iwx_msix_ivar_for_cause {
 #define IWX_UCODE_TLV_CAPA_LAR_MULTI_MCC        29
 #define IWX_UCODE_TLV_CAPA_BT_COEX_RRC            30
 #define IWX_UCODE_TLV_CAPA_GSCAN_SUPPORT        31
+#define IWX_UCODE_TLV_CAPA_FRAGMENTED_PNVM_IMG     32
+#define IWX_UCODE_TLV_CAPA_MLD_API_SUPPORT         110
+#define IWX_UCODE_TLV_CAPA_STA_EXP_MFP_SUPPORT     114
 #define IWX_UCODE_TLV_CAPA_NAN_SUPPORT            34
 #define IWX_UCODE_TLV_CAPA_UMAC_UPLOAD            35
 #define IWX_UCODE_TLV_CAPA_BINDING_CDB_SUPPORT        39
@@ -4414,6 +4417,17 @@ struct iwx_notif_statistics_v11 {
     struct iwx_statistics_general_v8 general;
     struct iwx_statistics_load_v1 load_stats;
 } __packed; /* STATISTICS_NTFY_API_S_VER_11 */
+
+/* API 14+ statistics notifications use a typed TLV header, not the legacy
+ * fixed-layout iwx_notif_statistics payload.
+ */
+struct iwx_statistics_ntfy_hdr {
+    uint8_t type;
+    uint8_t version;
+    uint16_t size;
+} __packed;
+#define IWX_STATISTICS_TYPE_OPERATIONAL 0
+#define IWX_STATISTICS_TYPE_MASK        0x7f
 
 /**
  * flags used in statistics notification
@@ -8009,7 +8023,7 @@ iwx_cmd_id(uint8_t opcode, uint8_t groupid, uint8_t version)
 }
 
 /* make uint16_t wide id out of uint8_t group and opcode */
-#define IWX_WIDE_ID(grp, opcode) ((grp << 8) | opcode)
+#define IWX_WIDE_ID(grp, opcode) (((grp) << 8) | (opcode))
 
 struct iwx_cmd_header {
     uint8_t cmd;

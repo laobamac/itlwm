@@ -124,6 +124,9 @@
 
 #include "if_iwxreg.h"
 #include "if_iwxvar.h"
+#include "iwx_mld_mac.h"
+#include "iwx_phy_v4.h"
+#include "iwx_scan_v16.h"
 #include <sys/pcireg.h>
 
 #include <IOKit/network/IOEthernetController.h>
@@ -199,6 +202,11 @@ public:
     
     uint8_t    iwx_lookup_cmd_ver(struct iwx_softc *, uint8_t, uint8_t);
     uint8_t    iwx_lookup_notif_ver(struct iwx_softc *, uint8_t, uint8_t);
+    int iwx_mld_send_mac(struct iwx_softc *, uint8_t, uint16_t, const void *, const char *);
+    int iwx_mld_mac_cmd(struct iwx_softc *, struct iwx_node *, uint32_t, int);
+    int iwx_mld_link_cmd(struct iwx_softc *, struct iwx_node *, uint32_t);
+    int iwx_mld_sta_cmd(struct iwx_softc *, struct iwx_node *, int);
+    int iwx_mld_aux_cmd(struct iwx_softc *);
     uint32_t    iwx_lmac_id(struct iwx_softc *, ieee80211_channel *);
     int    iwx_store_cscheme(struct iwx_softc *, uint8_t *, size_t);
     int    iwx_alloc_fw_monitor_block(struct iwx_softc *, uint8_t, uint8_t);
@@ -219,10 +227,10 @@ public:
     int    iwx_set_default_calib(struct iwx_softc *, const void *);
     void    iwx_fw_info_free(struct iwx_fw_info *);
     void    iwx_pnvm_free(struct iwx_fw_info *);
+    void    iwx_free_pnvm_dma(struct iwx_softc *);
     int    iwx_read_firmware(struct iwx_softc *);
     int    iwx_read_pnvm(struct iwx_softc *);
     int     iwx_load_pnvm(struct iwx_softc *);
-    int     iwx_pnvm_handle_section(struct iwx_softc *, const uint8_t *, size_t);
     uint32_t iwx_read_prph_unlocked(struct iwx_softc *, uint32_t);
     uint32_t iwx_read_prph(struct iwx_softc *, uint32_t);
     uint32_t iwx_read_umac_prph(struct iwx_softc *, uint32_t);
@@ -276,7 +284,8 @@ public:
     int    iwx_nic_init(struct iwx_softc *);
     int    iwx_enable_txq(struct iwx_softc *, int, int, int, int);
     int     iwx_tvqm_alloc_txq(struct iwx_softc *, int, int);
-    int     iwx_tvqm_enable_txq(struct iwx_softc *, int, int, uint32_t);
+    int     iwx_tvqm_enable_txq(struct iwx_softc *, int, int, int, uint32_t);
+    int     iwx_mld_remove_txqs(struct iwx_softc *, int, int, int);
     void    iwx_post_alive(struct iwx_softc *);
     int iwx_send_time_event_cmd(struct iwx_softc *sc,
                             const struct iwx_time_event_cmd *cmd);
@@ -360,6 +369,8 @@ public:
                                 uint8_t, uint32_t, uint32_t);
     int    iwx_phy_ctxt_cmd(struct iwx_softc *, struct iwx_phy_ctxt *, uint8_t,
             uint8_t, uint32_t, uint32_t);
+    int iwx_phy_ctxt_cmd_v4(struct iwx_softc *, struct iwx_phy_ctxt *, uint8_t,
+            uint8_t, uint32_t, uint32_t);
     int    iwx_send_cmd(struct iwx_softc *, struct iwx_host_cmd *);
     int    iwx_wait_notification(struct iwx_softc *, int *, int, uint32_t);
     int    iwx_send_cmd_pdu(struct iwx_softc *, uint32_t, uint32_t, uint16_t,
@@ -405,6 +416,7 @@ public:
     int    iwx_umac_scan(struct iwx_softc *, int);
     int    iwx_umac_scan_v12(struct iwx_softc *, int);
     int    iwx_umac_scan_v14(struct iwx_softc *, int);
+    int    iwx_umac_scan_v16(struct iwx_softc *, int);
     void    iwx_mcc_update(struct iwx_softc *, struct iwx_mcc_chub_notif *);
     uint8_t    iwx_ridx2rate(struct ieee80211_rateset *, int);
     int    iwx_rval2ridx(int);

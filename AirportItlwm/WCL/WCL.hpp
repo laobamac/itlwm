@@ -341,6 +341,14 @@ inline size_t selectWPA2TransitionMode(uint8_t *ies, size_t length) {
     for (size_t offset = 0; offset < length; ) {
         uint8_t *ie = ies + offset;
         size_t size = size_t(ie[1]) + 2;
+        if (offset + size > length)
+            break;
+        // Strip RSNXE (Element ID 244) from scan metadata so WCL does not see SAE / H2E capability
+        if (ie[0] == 244) {
+            memmove(ie, ie + size, length - offset - size);
+            length -= size;
+            continue;
+        }
         if (ie[0] != 48 || size < 10 || read16(ie + 2) != 1) {
             offset += size;
             continue;
@@ -362,24 +370,21 @@ inline size_t selectWPA2TransitionMode(uint8_t *ies, size_t length) {
             continue;
         }
         size_t tailOffset = suitesOffset + 4 * count;
-        // PSK/SAE transition mode advertises PMF capable, but not required.
-        if (size - tailOffset < 2 || (read16(ie + tailOffset) & 0xc0) != 0x80) {
+        if (size - tailOffset < 2) {
             offset += size;
             continue;
         }
-        bool psk = false, sae = false, other = false;
+        bool psk = false, sae = false;
         for (size_t i = 0; i < count; ++i) {
             const uint8_t *suite = ie + suitesOffset + 4 * i;
-            if (suite[0] != 0 || suite[1] != 0x0f || suite[2] != 0xac)
-                other = true;
-            else if (suite[3] == 2)
-                psk = true;
-            else if (suite[3] == 8)
-                sae = true;
-            else
-                other = true;
+            if (suite[0] == 0 && suite[1] == 0x0f && suite[2] == 0xac) {
+                if (suite[3] == 2)
+                    psk = true;
+                else if (suite[3] == 8 || suite[3] == 24)
+                    sae = true;
+            }
         }
-        if (!psk || !sae || other) {
+        if (!psk || !sae) {
             offset += size;
             continue;
         }
@@ -388,13 +393,17 @@ inline size_t selectWPA2TransitionMode(uint8_t *ies, size_t length) {
         ie[countOffset] = 1;
         ie[countOffset + 1] = 0;
         size_t removed = 4 * (count - 1);
-        // Keep RSN capabilities, PMKIDs, group-management cipher and all
-        // following information elements byte-for-byte intact.
         memmove(ie + suitesOffset + 4, ie + tailOffset,
                 length - offset - tailOffset);
         ie[1] -= removed;
         length -= removed;
-        offset += size - removed;
+        size -= removed;
+
+        // In RSN capabilities, clear MFPR (bit 6 = 0x40) so WCL knows PMF is optional / not required
+        uint8_t *rsnCaps = ie + suitesOffset + 4;
+        rsnCaps[0] &= ~0x40;
+
+        offset += size;
     }
     return length;
 }

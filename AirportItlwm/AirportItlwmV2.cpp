@@ -870,6 +870,8 @@ IOReturn AirportItlwm::setHardwareAddress(const void *addrP, UInt32 addrBytes)
     }
 #endif
     if_setlladdr(&fHalService->get80211Controller()->ic_ac.ac_if, (const UInt8 *)addrP);
+    IEEE80211_ADDR_COPY(fHalService->get80211Controller()->ic_myaddr, addrP);
+    IEEE80211_ADDR_COPY(fHalService->get80211Controller()->ic_ac.ac_enaddr, addrP);
 #ifdef AIRPORT_WCL
     if (ic->ic_if.if_flags & IFF_RUNNING) {
         ic->ic_wcl_mac_reconfig = true;

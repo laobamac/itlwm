@@ -144,7 +144,7 @@ ieee80211_eapol_key_input(struct ieee80211com *ic, mbuf_t m,
         goto done;
     
     if (ieee80211_is_sha256_akm((enum ieee80211_akm)ni->ni_rsnakms)) {
-        if (desc != EAPOL_KEY_DESC_V3)
+        if (desc != EAPOL_KEY_DESC_V3 && desc != EAPOL_KEY_DESC_V2)
             goto done;
     } else if (ni->ni_rsncipher == IEEE80211_CIPHER_CCMP ||
                ni->ni_rsngroupcipher == IEEE80211_CIPHER_CCMP) {

@@ -1252,8 +1252,10 @@ ieee80211_amsdu_decap_validate(struct ieee80211com *ic, mbuf_t m,
             break;
 #endif
         case IEEE80211_M_STA:
-            /* Subframes must be addressed to me. */
-            if (!ETHER_IS_EQ(ic->ic_myaddr, eh->ether_dhost))
+            /* Subframes must be addressed to me, our interface, or multicast/broadcast. */
+            if (!ETHER_IS_EQ(ic->ic_myaddr, eh->ether_dhost) &&
+                !ETHER_IS_EQ(ic->ic_ac.ac_enaddr, eh->ether_dhost) &&
+                !ETHER_IS_MULTICAST(eh->ether_dhost))
                 return 1;
             break;
         default:

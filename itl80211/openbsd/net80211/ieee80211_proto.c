@@ -672,7 +672,7 @@ ieee80211_ht_negotiate(struct ieee80211com *ic, struct ieee80211_node *ni)
  * 52-80, which is not a valid 802.11 channel. The firmware asserts
  * when told to tune it. Like cfg80211_chandef_usable(), require the control
  * channel to be on the 20MHz raster of the block and every 20MHz subchannel
- * to be one we support.
+ * to be one we support with the VHT80/VHT160 permission for this width.
  */
 static int
 ieee80211_vht_chandef_usable(struct ieee80211com *ic,
@@ -681,6 +681,14 @@ ieee80211_vht_chandef_usable(struct ieee80211com *ic,
     int ctrl = c->ic_freq;
     int freq;
     u_int chan;
+    uint32_t perm;
+
+    if (width == 160)
+        perm = IEEE80211_CHAN_VHT160;
+    else if (width == 80)
+        perm = IEEE80211_CHAN_VHT80;
+    else
+        return 0;
 
     if (center == 0 || ctrl <= center - width / 2 ||
         ctrl >= center + width / 2 ||
@@ -691,10 +699,41 @@ ieee80211_vht_chandef_usable(struct ieee80211com *ic,
          freq += 20) {
         chan = ieee80211_mhz2ieee(freq, c->ic_flags);
         if (chan == 0 || chan > IEEE80211_CHAN_MAX ||
-            ic->ic_channels[chan].ic_flags == 0 ||
-            ic->ic_channels[chan].ic_freq != freq)
+            ic->ic_channels[chan].ic_freq != freq ||
+            (ic->ic_channels[chan].ic_flags & perm) == 0)
             return 0;
     }
+    return 1;
+}
+
+/*
+ * Check an HT40 definition: the control channel must allow HT40 towards the
+ * secondary channel, and the secondary channel must be one we support.
+ */
+static int
+ieee80211_ht40_chandef_usable(struct ieee80211com *ic,
+    struct ieee80211_channel *c, int center)
+{
+    int ctrl = c->ic_freq;
+    int sec;
+    u_int chan;
+
+    if (center == ctrl + 10) {
+        if (!IEEE80211_IS_CHAN_HT40U(c))
+            return 0;
+        sec = ctrl + 20;
+    } else if (center == ctrl - 10) {
+        if (!IEEE80211_IS_CHAN_HT40D(c))
+            return 0;
+        sec = ctrl - 20;
+    } else
+        return 0;
+
+    chan = ieee80211_mhz2ieee(sec, c->ic_flags);
+    if (chan == 0 || chan > IEEE80211_CHAN_MAX ||
+        ic->ic_channels[chan].ic_flags == 0 ||
+        ic->ic_channels[chan].ic_freq != sec)
+        return 0;
     return 1;
 }
 
@@ -859,6 +898,15 @@ ieee80211_vht_negotiate(struct ieee80211com *ic, struct ieee80211_node *ni)
         XYLog("%s unusable 80MHz center=%d ctrl=%d, using HT width\n",
               __FUNCTION__, ni->ni_chan->ic_center_freq1, ni->ni_chan->ic_freq);
         ieee80211_ht_negotiate_chw(ic, ni);
+        if (ni->ni_chw == IEEE80211_CHAN_WIDTH_40 &&
+            !ieee80211_ht40_chandef_usable(ic, ni->ni_chan,
+            ni->ni_chan->ic_center_freq1)) {
+            XYLog("%s unusable 40MHz center=%d ctrl=%d, using 20MHz\n",
+                  __FUNCTION__, ni->ni_chan->ic_center_freq1,
+                  ni->ni_chan->ic_freq);
+            ni->ni_chw = IEEE80211_CHAN_WIDTH_20;
+            ni->ni_chan->ic_center_freq1 = ni->ni_chan->ic_freq;
+        }
     }
 
     ni->ni_flags |= IEEE80211_NODE_VHT;

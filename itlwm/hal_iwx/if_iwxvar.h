@@ -612,6 +612,12 @@ struct iwx_softc {
     struct iwx_ba_task_data    ba_tx;
     
     struct iwx_tid_data sc_tid_data[IWX_MAX_TID_COUNT + 1];//per tid data + mgmt. Look at %iwx_tid_data.
+    /*
+     * TIDs of IWX_STATION_ID that own a firmware Tx queue added with
+     * SCD_QUEUE_CONFIG_CMD. That API removes queues by (station, TID) and
+     * requires the removal before the station itself is removed.
+     */
+    uint32_t sc_scd_tid_mask;
 
     /* Task for ERP/HT prot/slot-time/EDCA updates. */
     struct task        mac_ctxt_task;
@@ -687,6 +693,12 @@ struct iwx_softc {
 
 	int sc_intmask;
 	int sc_flags;
+	/* A scan was aborted; its completion must not end the next scan. */
+	bool sc_scan_abort_pending;
+	/* 1 once the aborted scan's completion notification has arrived. */
+	int sc_scan_abort_done;
+	/* How long to wait for ALIVE, in ms (0 = the default 1000 ms). */
+	uint32_t sc_alive_timeout;
 
 	uint32_t sc_fh_init_mask;
 	uint32_t sc_hw_init_mask;

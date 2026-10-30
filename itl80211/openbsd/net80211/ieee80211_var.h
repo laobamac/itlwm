@@ -440,6 +440,7 @@ struct ieee80211com {
     void            (*ic_update_chw)(struct ieee80211com *);
 #ifdef AIRPORT_WCL
     bool ic_wcl_mac_reconfig;
+    int ic_deauth_tx_pending;           /* leave deauth queued, tx not done yet */
     bool ic_wcl_enterprise;
     bool ic_wcl_join_requested;
     bool ic_wcl_scan_requested;
@@ -452,6 +453,29 @@ struct ieee80211com {
     uint64_t ic_wcl_tx_packets[4];
     uint64_t ic_wcl_rx_packets[4];
 #endif
+    /*
+     * Set with a SCAN -> SCAN transition by a join request: the driver ends
+     * the scan in progress and selects the BSS from the current node table.
+     */
+    bool            ic_join_now;
+    /*
+     * Channel of the BSS a join request named (0 = unknown). The next scan
+     * covers only this channel; it is cleared when that scan is started.
+     */
+    uint8_t         ic_join_chan;
+    /*
+     * Channel of the scan that just ran as such a one-channel join scan
+     * (0 = the last scan wasn't one), and how often it was repeated because
+     * the BSS wasn't found: one look can miss it.
+     */
+    uint8_t         ic_join_chan_scanned;
+    uint8_t         ic_join_chan_retries;
+    /*
+     * Set with a SCAN -> SCAN transition by a system scan request: the driver
+     * restarts the scan in progress, so that the requested channels are
+     * scanned while the request is pending.
+     */
+    bool            ic_scan_restart;
     void            (*ic_event_handler)(struct ieee80211com *, int, void *);
 	CTimeout*		ic_bgscan_timeout;
 	uint32_t		ic_bgscan_fail;

@@ -343,9 +343,12 @@ inline bool scanUsesProbes(bool requested, bool activeRequest) {
 inline size_t selectWPA2TransitionMode(uint8_t *ies, size_t length) {
     if (!validIEs(ies, length))
         return length;
+    bool converted = false;
     for (size_t offset = 0; offset < length; ) {
         uint8_t *ie = ies + offset;
         size_t size = size_t(ie[1]) + 2;
+        if (offset + size > length)
+            break;
         if (ie[0] != 48 || size < 10 || read16(ie + 2) != 1) {
             offset += size;
             continue;
@@ -377,9 +380,9 @@ inline size_t selectWPA2TransitionMode(uint8_t *ies, size_t length) {
             const uint8_t *suite = ie + suitesOffset + 4 * i;
             if (suite[0] != 0 || suite[1] != 0x0f || suite[2] != 0xac)
                 other = true;
-            else if (suite[3] == 2)
+            else if (suite[3] == 2 || suite[3] == 6)
                 psk = true;
-            else if (suite[3] == 8)
+            else if (suite[3] == 8 || suite[3] == 24)
                 sae = true;
             else
                 other = true;
@@ -400,6 +403,21 @@ inline size_t selectWPA2TransitionMode(uint8_t *ies, size_t length) {
         ie[1] -= removed;
         length -= removed;
         offset += size - removed;
+        converted = true;
+    }
+    if (converted) {
+        for (size_t offset = 0; offset < length; ) {
+            uint8_t *ie = ies + offset;
+            size_t size = size_t(ie[1]) + 2;
+            if (offset + size > length)
+                break;
+            if (ie[0] == 244) {
+                memmove(ie, ie + size, length - offset - size);
+                length -= size;
+                continue;
+            }
+            offset += size;
+        }
     }
     return length;
 }

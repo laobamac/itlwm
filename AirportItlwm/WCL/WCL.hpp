@@ -380,8 +380,10 @@ inline size_t selectWPA2TransitionMode(uint8_t *ies, size_t length) {
             const uint8_t *suite = ie + suitesOffset + 4 * i;
             if (suite[0] != 0 || suite[1] != 0x0f || suite[2] != 0xac)
                 other = true;
-            else if (suite[3] == 2 || suite[3] == 6)
+            else if (suite[3] == 2)
                 psk = true;
+            else if (suite[3] == 6)
+                continue; // PSK-SHA256 is recognized, but ordinary PSK is still required.
             else if (suite[3] == 8 || suite[3] == 24)
                 sae = true;
             else

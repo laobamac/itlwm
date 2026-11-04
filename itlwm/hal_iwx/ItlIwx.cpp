@@ -6179,10 +6179,15 @@ iwx_rx_tx_cmd_single(struct iwx_softc *sc, struct iwx_rx_packet *pkt,
     KASSERT(tx_resp->frame_count == 1, "tx_resp->frame_count == 1");
     
     txfail = (status != IWX_TX_STATUS_SUCCESS);
-    if (txd->type == IEEE80211_FC0_TYPE_MGT && ic->ic_deauth_tx_pending) {
-        ic->ic_deauth_tx_pending = 0;
-        getMainCommandGate()->commandWakeup(&ic->ic_deauth_tx_pending);
+#ifdef AIRPORT_WCL
+    if (txd->flags & IWX_TXDATA_FLAG_LEAVE_DEAUTH) {
+        txd->flags &= ~IWX_TXDATA_FLAG_LEAVE_DEAUTH;
+        if (ic->ic_deauth_tx_pending) {
+            ic->ic_deauth_tx_pending = 0;
+            getMainCommandGate()->commandWakeup(&ic->ic_deauth_tx_pending);
+        }
     }
+#endif
     
     if (txfail) {
         DPRINTFN(3, ("%s %d OUTPUT_ERROR type=%d status=%d\n", __FUNCTION__, __LINE__, txd->type, status));
@@ -7342,6 +7347,13 @@ iwx_tx(struct iwx_softc *sc, mbuf_t m, struct ieee80211_node *ni, int ac)
     data->m = m;
     data->in = in;
     data->type = type;
+    data->flags &= ~IWX_TXDATA_FLAG_LEAVE_DEAUTH;
+#ifdef AIRPORT_WCL
+    /* Only this frame's completion ends leaveWCLNetwork()'s wait. */
+    if (type == IEEE80211_FC0_TYPE_MGT && subtype == IEEE80211_FC0_SUBTYPE_DEAUTH &&
+        ic->ic_deauth_tx_pending)
+        data->flags |= IWX_TXDATA_FLAG_LEAVE_DEAUTH;
+#endif
 
     DPRINTFN(3, ("sending data: 嘤嘤嘤 tid=%d qid=%d idx=%d queued=%d len=%d nsegs=%d flags=0x%08x rate_n_flags=0x%08x offload_assist=%u\n",
           tid, ring->qid, ring->cur, ring->queued, totlen, nsegs, le32toh(flags),
@@ -11318,10 +11330,13 @@ iwx_stop(struct _ifnet *ifp)
     
     //    rw_assert_wrlock(&sc->ioctl_rwl);
     
+#ifdef AIRPORT_WCL
+    /* The deauth won't be sent now: end leaveWCLNetwork()'s wait. */
     if (ic->ic_deauth_tx_pending) {
         ic->ic_deauth_tx_pending = 0;
         getMainCommandGate()->commandWakeup(&ic->ic_deauth_tx_pending);
     }
+#endif
     sc->sc_flags |= IWX_FLAG_SHUTDOWN; /* Disallow new tasks. */
     sc->sc_generation++;
     getMainCommandGate()->commandWakeup(&sc->sc_uc.uc_intr);

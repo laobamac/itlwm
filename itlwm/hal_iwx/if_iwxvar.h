@@ -341,6 +341,7 @@ struct iwx_tx_data {
 #define IWX_TXDATA_FLAG_CMD_IS_NARROW  0x01
 #define IWX_TXDATA_FLAG_CMD_PENDING    0x02
 #define IWX_TXDATA_FLAG_CMD_WAITING    0x04
+#define IWX_TXDATA_FLAG_LEAVE_DEAUTH   0x08 /* the deauth ic_deauth_tx_pending waits for */
     uint8_t type;
 };
 

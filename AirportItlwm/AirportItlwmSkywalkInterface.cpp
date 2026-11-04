@@ -806,7 +806,7 @@ setASSOCIATE(struct apple80211_assoc_data *ad)
          * timeout. Ask the driver to end the scan now and choose the BSS
          * from the node table filled by the scan that preceded this request.
          */
-        if (ic->ic_state == IEEE80211_S_SCAN) {
+        if (ic->ic_state == IEEE80211_S_SCAN && ic->ic_scan_restart_supported) {
             ic->ic_join_now = true;
             ic->ic_newstate(ic, IEEE80211_S_SCAN, -1);
         }

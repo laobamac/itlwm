@@ -307,13 +307,16 @@ IOReturn AirportItlwmSkywalkInterface::startWCLScan(AirportWCL::ScanRequest &sca
         /*
          * The driver's own scan is running and may already be past the
          * requested channels, and the system keeps only the results that
-         * arrive while its request is pending. Restart the scan with the
-         * requested channels (see ic_scan_restart); its end completes
-         * this request.
+         * arrive while its request is pending. Where the HAL supports it,
+         * restart the scan with the requested channels (see
+         * ic_scan_restart); its end completes this request. Otherwise the
+         * end of the scan in progress does.
          */
-        scanSkipCompletion = false;
-        ic->ic_scan_restart = true;
-        ic->ic_newstate(ic, IEEE80211_S_SCAN, -1);
+        if (ic->ic_scan_restart_supported) {
+            scanSkipCompletion = false;
+            ic->ic_scan_restart = true;
+            ic->ic_newstate(ic, IEEE80211_S_SCAN, -1);
+        }
     } else {
         int error = ic->ic_newstate(ic, IEEE80211_S_SCAN, -1);
         if (error) {
@@ -647,7 +650,7 @@ IOReturn AirportItlwmSkywalkInterface::startWCLJoin(AirportWCL::JoinRequest &joi
      * Already scanning: end that scan now and choose from the node table
      * instead of waiting for it to finish (see ic_join_now).
      */
-    if (ic->ic_state == IEEE80211_S_SCAN) {
+    if (ic->ic_state == IEEE80211_S_SCAN && ic->ic_scan_restart_supported) {
         ic->ic_join_now = true;
         ic->ic_newstate(ic, IEEE80211_S_SCAN, -1);
     }

@@ -476,6 +476,11 @@ struct ieee80211com {
      * scanned while the request is pending.
      */
     bool            ic_scan_restart;
+    /*
+     * The HAL acts on ic_join_now and ic_scan_restart (iwx). Without it, a
+     * join or system scan request during a scan waits for that scan's end.
+     */
+    bool            ic_scan_restart_supported;
     void            (*ic_event_handler)(struct ieee80211com *, int, void *);
 	CTimeout*		ic_bgscan_timeout;
 	uint32_t		ic_bgscan_fail;

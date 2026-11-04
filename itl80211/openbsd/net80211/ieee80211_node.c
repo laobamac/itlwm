@@ -1467,6 +1467,15 @@ ieee80211_end_scan(struct _ifnet *ifp)
 #endif
         if (ic->ic_state != IEEE80211_S_RUN) {
             /*
+             * A one-channel join scan (ic_join_chan) can miss the BSS, with
+             * or without hearing other networks; look at that channel once
+             * more before scanning all channels.
+             */
+            if (ic->ic_join_chan_scanned && ic->ic_join_chan_retries < 1) {
+                ic->ic_join_chan_retries++;
+                ic->ic_join_chan = ic->ic_join_chan_scanned;
+            }
+            /*
              * Reset the list of channels to scan and scan the next mode
              * if nothing has been found.
              * If the device scans all bands in one fell swoop, return
@@ -1569,14 +1578,6 @@ ieee80211_end_scan(struct _ifnet *ifp)
         /* F_BGSCAN flag gets cleared in ieee80211_node_join_bss(). */
         return;
     } else if (selbs == NULL) {
-        /*
-         * A one-channel join scan (ic_join_chan) can miss the BSS; look
-         * at that channel once more before scanning all channels.
-         */
-        if (ic->ic_join_chan_scanned && ic->ic_join_chan_retries < 1) {
-            ic->ic_join_chan_retries++;
-            ic->ic_join_chan = ic->ic_join_chan_scanned;
-        }
         goto notfound;
     }
     ic->ic_join_chan_scanned = 0;

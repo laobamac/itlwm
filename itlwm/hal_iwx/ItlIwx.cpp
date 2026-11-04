@@ -5079,14 +5079,19 @@ iwx_wait_notification(struct iwx_softc *sc, int *value, int bits, uint32_t milli
  * After a scan abort, wait (up to 100 ms) for the aborted scan's completion
  * notification before sending another scan request, as iwlwifi does: a scan
  * request sent before it occasionally makes the UMAC assert (0x20002806).
- * Returns nonzero if the firmware was restarted meanwhile.
+ * Returns 0 once the completion arrived, ENXIO if the firmware was restarted
+ * meanwhile, or EWOULDBLOCK if the completion didn't arrive in time.
  */
 int ItlIwx::
 iwx_wait_scan_abort_done(struct iwx_softc *sc, int generation)
 {
+    int err = 0;
+
     if (!sc->sc_scan_abort_done)
-        iwx_wait_notification(sc, &sc->sc_scan_abort_done, 1, 100);
-    return generation != sc->sc_generation;
+        err = iwx_wait_notification(sc, &sc->sc_scan_abort_done, 1, 100);
+    if (generation != sc->sc_generation)
+        return ENXIO;
+    return (err || !sc->sc_scan_abort_done) ? EWOULDBLOCK : 0;
 }
 
 int ItlIwx::
@@ -10510,9 +10515,21 @@ iwx_newstate_task(void *psc)
                     splx(s);
                     return;
                 }
-                if (aborted && err == 0 && that->iwx_wait_scan_abort_done(sc, generation)) {
-                    splx(s);
-                    return;
+                if (aborted && err == 0) {
+                    err = that->iwx_wait_scan_abort_done(sc, generation);
+                    if (err) {
+                        /*
+                         * Without the abort's completion the firmware may
+                         * still be scanning: don't scan or join on top of
+                         * it, restart the firmware instead.
+                         */
+                        if (err == EWOULDBLOCK) {
+                            XYLog("%s: no completion for the aborted scan, restarting firmware\n", DEVNAME(sc));
+                            task_add(systq, &sc->init_task);
+                        }
+                        splx(s);
+                        return;
+                    }
                 }
                 if (err == 0) {
                     ieee80211_end_scan(&ic->ic_if);
@@ -10544,9 +10561,18 @@ iwx_newstate_task(void *psc)
                     splx(s);
                     return;
                 }
-                if (aborted && err == 0 && that->iwx_wait_scan_abort_done(sc, generation)) {
-                    splx(s);
-                    return;
+                if (aborted && err == 0) {
+                    err = that->iwx_wait_scan_abort_done(sc, generation);
+                    if (err) {
+                        /* As above: no scan on top of an unconfirmed abort. */
+                        if (err == EWOULDBLOCK) {
+                            ic->ic_scan_restart = false;
+                            XYLog("%s: no completion for the aborted scan, restarting firmware\n", DEVNAME(sc));
+                            task_add(systq, &sc->init_task);
+                        }
+                        splx(s);
+                        return;
+                    }
                 }
                 /*
                  * A long all-passive scan request sent within ~2 ms of an

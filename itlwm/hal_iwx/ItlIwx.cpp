@@ -3565,6 +3565,7 @@ iwx_tvqm_enable_txq(struct iwx_softc *sc, int tid, int ssn, uint32_t size)
     int fwqid;
     uint32_t wr_idx;
     size_t resp_len;
+    bool added = false;
     struct iwx_tx_queue_cfg_cmd cmd = {
         .flags = htole16(IWX_TX_QUEUE_CFG_ENABLE_QUEUE),
         .sta_id = IWX_STATION_ID,
@@ -3643,7 +3644,15 @@ iwx_tvqm_enable_txq(struct iwx_softc *sc, int tid, int ssn, uint32_t size)
          * before a new one can be added.
          */
         if (sc->sc_scd_tid_mask & (1 << tid)) {
-            iwx_scd_queue_remove(sc, IWX_STATION_ID, tid);
+            int generation = sc->sc_generation;
+            err = iwx_scd_queue_remove(sc, IWX_STATION_ID, tid);
+            if (generation != sc->sc_generation)
+                err = ENXIO;
+            if (err) {
+                /* The old queue may still exist: keep tracking it, don't add. */
+                err = -err;
+                goto fail;
+            }
             sc->sc_scd_tid_mask &= ~(1 << tid);
         }
         memset(&cmd_v3, 0, sizeof(cmd_v3));
@@ -3695,8 +3704,10 @@ iwx_tvqm_enable_txq(struct iwx_softc *sc, int tid, int ssn, uint32_t size)
     resp = (struct iwx_tx_queue_cfg_rsp *)pkt->data;
     fwqid = le16toh(resp->queue_number);
     wr_idx = le16toh(resp->write_pointer);
-    if (scd_ver == 3)
+    if (scd_ver == 3) {
         sc->sc_scd_tid_mask |= 1 << tid;
+        added = true;
+    }
     if (fwqid >= ARRAY_SIZE(sc->txq)) {
         XYLog("queue index %d unsupported", fwqid);
         err = -EIO;
@@ -3724,7 +3735,7 @@ fail:
      * Release a queue the firmware added but we could not accept
      * (not when the device went away while the command was in flight).
      */
-    if (scd_ver == 3 && err != -ENXIO && (sc->sc_scd_tid_mask & (1 << tid))) {
+    if (added && err != -ENXIO) {
         iwx_scd_queue_remove(sc, IWX_STATION_ID, tid);
         sc->sc_scd_tid_mask &= ~(1 << tid);
     }
@@ -3781,20 +3792,32 @@ iwx_scd_queue_remove(struct iwx_softc *sc, int sta_id, int tid)
 int ItlIwx::
 iwx_scd_remove_sta_queues(struct iwx_softc *sc)
 {
-    int err, tid;
+    int err, tid, generation = sc->sc_generation;
 
     if (iwx_scd_queue_cmd_ver(sc) != 3)
         return 0;
+    /*
+     * Stop at the first failure: a queue the firmware still has stays
+     * tracked, and the caller must not remove the station.
+     */
     for (tid = 0; tid < IWX_MAX_TID_COUNT; tid++) {
         if (!(sc->sc_scd_tid_mask & (1 << tid)))
             continue;
-        iwx_scd_queue_remove(sc, IWX_STATION_ID, tid);
+        err = iwx_scd_queue_remove(sc, IWX_STATION_ID, tid);
+        if (generation != sc->sc_generation)
+            return ENXIO;
+        if (err)
+            return err;
         sc->sc_scd_tid_mask &= ~(1 << tid);
         sc->sc_tid_data[tid].qid = IWX_INVALID_QUEUE;
     }
     err = iwx_scd_queue_remove(sc, IWX_STATION_ID, IWX_MGMT_TID);
+    if (generation != sc->sc_generation)
+        return ENXIO;
+    if (err)
+        return err;
     sc->sc_scd_tid_mask = 0;
-    return err;
+    return 0;
 }
 
 void ItlIwx::

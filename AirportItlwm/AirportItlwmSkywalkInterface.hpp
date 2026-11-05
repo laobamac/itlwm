@@ -44,7 +44,13 @@ public:
     IOReturn setDYNAMIC_RSSI_WINDOW_CONFIG(apple80211_dynamic_rssi_window_config*) override { return kIOReturnUnsupported; }
     IOReturn setBSS_BLACKLIST(bss_blacklist*) override { return kIOReturnUnsupported; }
     IOReturn setWCL_LEGACY_ROAM_PROFILE_CONFIG(apple80211_legacy_roam_profile_config*) override { return kIOReturnUnsupported; }
-    IOReturn setWCL_ARP_MODE(apple80211_wcl_arp_mode*) override { return kIOReturnUnsupported; }
+    /*
+     * ARP offload and PM mode are configured by IO80211 around association and
+     * sleep. Neither is supported (no Wi-Fi during sleep), but rejecting them
+     * during association made IO80211 abandon the join (WCL_LEAVE_NETWORK);
+     * accept them as no-ops.
+     */
+    IOReturn setWCL_ARP_MODE(apple80211_wcl_arp_mode*) override { return kIOReturnSuccess; }
     IOReturn setWCL_QOS_PARAMS(apple80211_wcl_qos_params*) override { return kIOReturnUnsupported; }
     IOReturn setVOICE_IND_STATE(apple80211_voice_ind_state*) override { return kIOReturnUnsupported; }
     IOReturn setMWS_ACCESSORY_POWER_LIMIT_WIFI_ENH(apple80211_mws_accessory_power_limit*) override { return kIOReturnUnsupported; }
@@ -344,7 +350,7 @@ public:
     virtual IOReturn setABORT_SCAN(apple80211_abort_scan *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
     virtual IOReturn setSET_PROPERTY(apple80211_set_property_unserialized_data *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
     virtual IOReturn setROAM_CACHE_UPDATE(apple80211_roam_cache_data *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
-    virtual IOReturn setPM_MODE(apple80211_pm_mode *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
+    virtual IOReturn setPM_MODE(apple80211_pm_mode *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnSuccess; }
     virtual IOReturn setSET_WIFI_ASSERTION_STATE(apple80211_wifi_assertion_data *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
     virtual IOReturn setREASSOCIATE_WITH_CORECAPTURE(apple80211_capture_debug_info_t *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
     virtual IOReturn setLINKDOWN_DEBOUNCE_STATUS(apple80211_linkdown_debounce_status *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
@@ -441,14 +447,34 @@ private:
     void resumeWCLJoin();
     IOReturn abortWCLJoin();
     IOReturn leaveWCLNetwork();
+    IOReturn startWCLScan(AirportWCL::ScanRequest &);
+    void resumeWCLScan();
     void finishWCLScan(IOReturn);
     void finishWCLJoin(uint16_t, uint16_t, IOReturn);
     void publishWCLBeacon(const ieee80211_node *, const uint8_t *, size_t);
+    void keepWCLScanResult(const AirportWCL::BeaconMetadata *, size_t);
+    void clearWCLScanResults();
+    void postWCLLinkUp();
+    void waitWCLDeauthTx();
     IOTimerEventSource *joinTimer;
     uint8_t joinBSSID[6];
     bool scanPending;
     bool scanCompleted;
     bool scanSkipCompletion;
+    // A scan request held while the firmware restarts (resumeWCLScan).
+    bool scanDeferred = false;
+    AirportWCL::ScanRequest deferredScan = {};
+    // The latest result per BSS of the scan request in progress, posted again
+    // just before ScanDone (see finishWCLScan).
+    struct WCLScanResultCopy {
+        uint8_t bssid[6];
+        uint8_t channel;
+        uint32_t size;
+        void *data;
+    };
+    static constexpr unsigned kWCLScanResultCopies = 96;
+    WCLScanResultCopy wclScanResults[kWCLScanResultCopies] = {};
+    unsigned wclScanResultCount = 0;
     bool wclBssValid;
     bool wclLinkIndicated;
     uint8_t wclBssInfo[sizeof(AirportWCL::BeaconMetadata) + 0x800];
@@ -463,6 +489,8 @@ private:
     AirportWCL::JoinRequest deferredJoin = {};
     bool assocNotified;
     bool firstBeaconNotified;
+    // The joined BSS's first beacon arrived before the port was authorized.
+    bool wclFirstBeaconHeld = false;
     bool portAuthorized;
     uint8_t wclPermanentMAC[6] = {};
     bool wclStopping;

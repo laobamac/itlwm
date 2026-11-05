@@ -1398,6 +1398,7 @@ enum iwx_msix_ivar_for_cause {
 #define IWX_UCODE_TLV_CAPA_SET_LTR_GEN2             50
 #define IWX_UCODE_TLV_CAPA_SET_PPAG                 52
 #define IWX_UCODE_TLV_CAPA_SESSION_PROT_CMD         54
+#define IWX_UCODE_TLV_CAPA_BAID_ML_SUPPORT          63
 #define IWX_UCODE_TLV_CAPA_EXTENDED_DTS_MEASURE        64
 #define IWX_UCODE_TLV_CAPA_SHORT_PM_TIMEOUTS        65
 #define IWX_UCODE_TLV_CAPA_BT_MPLUT_SUPPORT        67
@@ -1855,6 +1856,55 @@ struct iwx_tx_queue_cfg_rsp {
     uint16_t reserved;
 } __packed; /* TX_QUEUE_CFG_RSP_API_S_VER_2 */
 
+/**
+ * scheduler queue operation
+ * @IWX_SCD_QUEUE_ADD: allocate a new queue
+ * @IWX_SCD_QUEUE_REMOVE: remove a queue
+ * @IWX_SCD_QUEUE_MODIFY: modify a queue
+ */
+#define IWX_SCD_QUEUE_ADD    0
+#define IWX_SCD_QUEUE_REMOVE    1
+#define IWX_SCD_QUEUE_MODIFY    2
+
+/**
+ * struct iwx_scd_queue_cfg_cmd - scheduler queue allocation command
+ * (DATA_PATH_GROUP SCD_QUEUE_CONFIG_CMD, replaces SCD_QUEUE_CFG in newer
+ * firmware). The response is &struct iwx_tx_queue_cfg_rsp.
+ * @operation: IWX_SCD_QUEUE_*
+ * @u.add.sta_mask: station mask
+ * @u.add.tid: TID
+ * @u.add.flags: flags from &enum iwl_tx_queue_cfg_actions, except
+ *    IWX_TX_QUEUE_CFG_ENABLE_QUEUE is not valid
+ * @u.add.cb_size: size code
+ * @u.add.bc_dram_addr: byte-count table IOVA
+ * @u.add.tfdq_dram_addr: TFD queue IOVA
+ * @u.remove.sta_mask: station mask of queue to remove
+ * @u.remove.tid: TID of queue to remove
+ */
+struct iwx_scd_queue_cfg_cmd {
+    uint32_t operation;
+    union {
+        struct {
+            uint32_t sta_mask;
+            uint8_t tid;
+            uint8_t reserved[3];
+            uint32_t flags;
+            uint32_t cb_size;
+            uint64_t bc_dram_addr;
+            uint64_t tfdq_dram_addr;
+        } __packed add; /* TX_QUEUE_CFG_CMD_ADD_API_S_VER_1 */
+        struct {
+            uint32_t sta_mask;
+            uint32_t tid;
+        } __packed remove; /* TX_QUEUE_CFG_CMD_REMOVE_API_S_VER_1 */
+        struct {
+            uint32_t old_sta_mask;
+            uint32_t tid;
+            uint32_t new_sta_mask;
+        } __packed modify; /* TX_QUEUE_CFG_CMD_MODIFY_API_S_VER_1 */
+    } __packed u; /* TX_QUEUE_CFG_CMD_OPERATION_API_U_VER_1 */
+} __packed; /* TX_QUEUE_CFG_CMD_API_S_VER_3 */
+
 
 /*
  * Commands
@@ -2020,7 +2070,10 @@ struct iwx_tx_queue_cfg_rsp {
 
 /* DATA_PATH group subcommand IDs */
 #define IWX_DQA_ENABLE_CMD    0x00
+#define IWX_RLC_CONFIG_CMD    0x08
 #define IWX_TLC_MNG_CONFIG_CMD    0x0f
+#define IWX_RX_BAID_ALLOCATION_CONFIG_CMD    0x16
+#define IWX_SCD_QUEUE_CONFIG_CMD    0x17
 #define IWX_RX_NO_DATA_NOTIF    0xf5
 #define IWX_TLC_MNG_UPDATE_NOTIF 0xf7
 
@@ -4621,9 +4674,10 @@ struct iwx_mac_data_ibss {
  * @dtim_time: DTIM arrival time in system time
  * @dtim_tsf: DTIM arrival time in TSF
  * @bi: beacon interval in TU, applicable only when associated
- * @bi_reciprocal: 2^32 / bi , applicable only when associated
+ * @reserved1: reserved (2^32 / bi in _VER_1)
  * @dtim_interval: DTIM interval in TU, applicable only when associated
- * @dtim_reciprocal: 2^32 / dtim_interval , applicable only when associated
+ * @data_policy: TWT/coex data path policy bits (2^32 / dtim_interval in
+ *    _VER_1); 0 = none
  * @listen_interval: in beacon intervals, applicable only when associated
  * @assoc_id: unique ID assigned by the AP during association
  */
@@ -4632,13 +4686,13 @@ struct iwx_mac_data_sta {
     uint32_t dtim_time;
     uint64_t dtim_tsf;
     uint32_t bi;
-    uint32_t bi_reciprocal;
+    uint32_t reserved1;
     uint32_t dtim_interval;
-    uint32_t dtim_reciprocal;
+    uint32_t data_policy;
     uint32_t listen_interval;
     uint32_t assoc_id;
     uint32_t assoc_beacon_arrive_time;
-} __packed; /* IWX_STA_MAC_DATA_API_S_VER_1 */
+} __packed; /* IWX_STA_MAC_DATA_API_S_VER_2 */
 
 /**
  * struct iwx_mac_data_go - configuration data for P2P GO MAC context
@@ -5571,6 +5625,92 @@ enum {
  */
 #define IWX_LQ_FLAG_DYNAMIC_BW_POS          6
 #define IWX_LQ_FLAG_DYNAMIC_BW_MSK          (1 << IWX_LQ_FLAG_DYNAMIC_BW_POS)
+
+/**
+ * struct iwx_rlc_properties - RLC properties
+ * @rx_chain_info: RX chain info, same encoding as the former PHY context
+ *    rxchain_info (IWX_PHY_RX_CHAIN_*)
+ * @reserved: reserved
+ */
+struct iwx_rlc_properties {
+    uint32_t rx_chain_info;
+    uint32_t reserved;
+} __packed; /* RLC_PROPERTIES_S_VER_1 */
+
+/**
+ * struct iwx_sad_properties - SAD (single antenna diversity) properties
+ */
+struct iwx_sad_properties {
+    uint32_t chain_a_sad_mode;
+    uint32_t chain_b_sad_mode;
+    uint32_t mac_id;
+    uint32_t reserved;
+} __packed;
+
+/**
+ * struct iwx_rlc_config_cmd - RLC configuration
+ * @phy_id: PHY index
+ * @rlc: RLC properties, &struct iwx_rlc_properties
+ * @sad: SAD options, &struct iwx_sad_properties
+ * @flags: flags
+ * @reserved: reserved
+ */
+struct iwx_rlc_config_cmd {
+    uint32_t phy_id;
+    struct iwx_rlc_properties rlc;
+    struct iwx_sad_properties sad;
+    uint8_t flags;
+    uint8_t reserved[3];
+} __packed; /* RLC_CONFIG_CMD_API_S_VER_2 */
+
+/**
+ * BAID allocation/config action
+ * @IWX_RX_BAID_ACTION_ADD: add a new BAID session
+ * @IWX_RX_BAID_ACTION_MODIFY: modify the BAID session
+ * @IWX_RX_BAID_ACTION_REMOVE: remove the BAID session
+ */
+#define IWX_RX_BAID_ACTION_ADD        0
+#define IWX_RX_BAID_ACTION_MODIFY    1
+#define IWX_RX_BAID_ACTION_REMOVE    2
+/*  RX_BAID_ALLOCATION_ACTION_E_VER_1 */
+
+struct iwx_rx_baid_cfg_cmd_alloc {
+    uint32_t sta_id_mask;
+    uint8_t tid;
+    uint8_t reserved[3];
+    uint16_t ssn;
+    uint16_t win_size;
+} __packed; /* RX_BAID_ALLOCATION_ADD_CMD_API_S_VER_1 */
+
+struct iwx_rx_baid_cfg_cmd_modify {
+    uint32_t old_sta_id_mask;
+    uint32_t new_sta_id_mask;
+    uint32_t tid;
+} __packed; /* RX_BAID_ALLOCATION_MODIFY_CMD_API_S_VER_2 */
+
+struct iwx_rx_baid_cfg_cmd_remove_v1 {
+    uint32_t baid;
+} __packed; /* RX_BAID_ALLOCATION_REMOVE_CMD_API_S_VER_1 */
+
+struct iwx_rx_baid_cfg_cmd_remove {
+    uint32_t sta_id_mask;
+    uint32_t tid;
+} __packed; /* RX_BAID_ALLOCATION_REMOVE_CMD_API_S_VER_2 */
+
+/**
+ * struct iwx_rx_baid_cfg_cmd - BAID allocation/config command; the
+ * response is a single uint32_t holding the allocated BAID.
+ * @action: IWX_RX_BAID_ACTION_*
+ */
+struct iwx_rx_baid_cfg_cmd {
+    uint32_t action;
+    union {
+        struct iwx_rx_baid_cfg_cmd_alloc alloc;
+        struct iwx_rx_baid_cfg_cmd_modify modify;
+        struct iwx_rx_baid_cfg_cmd_remove_v1 remove_v1;
+        struct iwx_rx_baid_cfg_cmd_remove remove;
+    }; /* RX_BAID_ALLOCATION_OPERATION_API_U_VER_2 */
+} __packed; /* RX_BAID_ALLOCATION_CONFIG_CMD_API_S_VER_2 */
 
 /**
  * Options for TLC config flags

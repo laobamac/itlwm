@@ -314,6 +314,52 @@ ieee80211_inputm(struct _ifnet *ifp, mbuf_t m, struct ieee80211_node *ni,
     type = wh->i_fc[0] & IEEE80211_FC0_TYPE_MASK;
     subtype = wh->i_fc[0] & IEEE80211_FC0_SUBTYPE_MASK;
     
+#ifdef AIRPORT_WCL
+    if (ic->ic_awdl_addr_gen && type != IEEE80211_FC0_TYPE_CTL &&
+        mbuf_len(m) >= sizeof(struct ieee80211_frame) &&
+        IEEE80211_ADDR_EQ(wh->i_addr1, ic->ic_awdl_addr)) {
+        /* A peer addressing awdl0 means it accepted us as an AWDL peer. */
+        if (type == IEEE80211_FC0_TYPE_MGT && subtype == IEEE80211_FC0_SUBTYPE_ACTION)
+            ic->ic_awdl_rx_uc_action++;
+        else if (type == IEEE80211_FC0_TYPE_DATA)
+            ic->ic_awdl_rx_uc_data++;
+        else
+            ic->ic_awdl_rx_uc_other++;
+        IEEE80211_ADDR_COPY(ic->ic_awdl_rx_uc_last_src, wh->i_addr2);
+        ic->ic_awdl_rx_uc_last_chan = rxi ? (uint8_t)rxi->rxi_chan : 0;
+        /* Data for awdl0 must not be taken as station traffic. */
+        if (type == IEEE80211_FC0_TYPE_DATA) {
+            if (ic->ic_awdl_data_handler && (*ic->ic_awdl_data_handler)(ic, m, rxi)) {
+                m = NULL;
+                goto out;
+            }
+            goto out;
+        }
+    }
+    if (ic->ic_vendor_action_handler && ic->ic_opmode == IEEE80211_M_STA) {
+        if (type == IEEE80211_FC0_TYPE_MGT &&
+            subtype == IEEE80211_FC0_SUBTYPE_ACTION &&
+            mbuf_len(m) > sizeof(struct ieee80211_frame) &&
+            mtod(m, const uint8_t *)[sizeof(struct ieee80211_frame)] == IEEE80211_CATEG_VENDOR &&
+            (*ic->ic_vendor_action_handler)(ic, m, rxi))
+            goto out;
+        /*
+         * The firmware filter is open for AWDL. Frames from other BSSes must
+         * not reach net80211: a foreign deauth would drop our association and
+         * ic_bss would pick up their RSSI and sequence numbers.
+         */
+        if (ic->ic_state > IEEE80211_S_SCAN &&
+            !(ic->ic_flags & IEEE80211_F_BGSCAN) && !ic->ic_wcl_scan_active) {
+            if (type == IEEE80211_FC0_TYPE_MGT &&
+                mbuf_len(m) >= sizeof(struct ieee80211_frame) &&
+                !IEEE80211_ADDR_EQ(wh->i_addr3, ic->ic_bss->ni_bssid))
+                goto out;
+            if (type == IEEE80211_FC0_TYPE_CTL &&
+                !IEEE80211_ADDR_EQ(wh->i_addr1, ic->ic_myaddr))
+                goto out;
+        }
+    }
+#endif
     if (type != IEEE80211_FC0_TYPE_CTL) {
         hdrlen = ieee80211_get_hdrlen(wh);
         if (mbuf_len(m) < hdrlen) {

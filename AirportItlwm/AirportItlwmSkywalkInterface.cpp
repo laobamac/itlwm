@@ -1004,6 +1004,36 @@ static int convertNodeToScanResult(ItlHalService *fHalService, struct ieee80211_
     return 0;
 }
 
+// IO80211PeerManager::getHtCapabilityIE asks for this through the station
+// interface when AWDL comes up and copies the 28 bytes after version; its
+// buildEnhDataRateTlv puts everything after hc_id / hc_len into TLV 7 of
+// our PSF and MI frames. Without it peers see "HTorVHT:0" and never cache
+// us for data (seen in iOS logs). Only with -itlawdl, so stock boots are
+// unchanged.
+IOReturn AirportItlwmSkywalkInterface::
+getHT_CAPABILITY(apple80211_ht_capability *d)
+{
+    static int awdl = -1;
+    if (awdl < 0) {
+        int v;
+        awdl = PE_parse_boot_argn("-itlawdl", &v, sizeof(v)) ? 1 : 0;
+    }
+    struct ieee80211com *ic = fHalService ? fHalService->get80211Controller() : NULL;
+    if (awdl != 1 || !d || !ic)
+        return kIOReturnUnsupported;
+    memset(d, 0, sizeof(*d));
+    d->version = APPLE80211_VERSION;
+    d->hc_id = IEEE80211_ELEMID_HTCAPS;
+    d->hc_len = 26;
+    d->hc_cap = ic->ic_htcaps;
+    d->hc_param = ic->ic_ampdu_params;
+    memcpy(d->hc_mcsset, ic->ic_sup_mcs, sizeof(d->hc_mcsset) < sizeof(ic->ic_sup_mcs) ?
+           sizeof(d->hc_mcsset) : sizeof(ic->ic_sup_mcs));
+    if (!d->hc_mcsset[0])
+        d->hc_mcsset[0] = 0xff;     /* MCS 0-7 */
+    return kIOReturnSuccess;
+}
+
 IOReturn AirportItlwmSkywalkInterface::
 getCURRENT_NETWORK(apple80211_scan_result *sr)
 {

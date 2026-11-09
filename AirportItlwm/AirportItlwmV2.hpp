@@ -258,6 +258,19 @@ public:
     IOService *pmPolicyMaker;
     UInt8 pmPCICapPtr;
     bool magicPacketEnabled;
+    static int awdlActionFrameHandler(struct ieee80211com *ic, mbuf_t m, struct ieee80211_rxinfo *rxi);
+    static int awdlDataFrameHandler(struct ieee80211com *ic, mbuf_t m, struct ieee80211_rxinfo *rxi);
+    // Experimental awdl0 support, enabled with the -itlawdl boot argument.
+    bool fAWDLEnabled;
+#if defined(AIRPORT_WCL) && __IO80211_TARGET != __MAC_15_2
+    class AirportItlwmAWDLInterface *fAWDLIf;
+    class AirportItlwmAWDLEthernetInterface *fAWDLBsdIf;
+    bool fCreatingAWDL;
+    ether_addr fAWDLMac;
+    IOReturn createAWDLInterface(struct apple80211_virt_if_create_data *data);
+    static IOReturn setAWDLLinkGated(OSObject *owner, void *arg0, void *, void *, void *);
+    void destroyAWDLInterface();
+#endif
     bool magicPacketSupported;
     
     //AWDL

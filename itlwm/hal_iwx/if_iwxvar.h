@@ -732,6 +732,44 @@ struct iwx_softc {
     struct iwx_rxba_data sc_rxba_data[IWX_MAX_BAID];
 
 	uint32_t sc_time_event_uid;
+	/* AWDL listen: a one-channel passive scan with its own uid. */
+	int sc_awdl_listen_active;
+	uint32_t sc_awdl_listen_count;
+	uint32_t sc_awdl_listen_fail;
+	/* Aux ROC (HOT_SPOT_CMD) state for the AWDL listen. */
+	int sc_aux_roc_pending;		/* sent, response not seen yet */
+	int sc_aux_roc_running;		/* between TE START and END */
+	int sc_aux_roc_sta;		/* aux station added for the ROC (ADD_STA v12+) */
+	uint32_t sc_aux_roc_sta_err;
+	uint32_t sc_aux_roc_sta_stage;	/* 1 ADD_STA send, 2 ADD_STA status, 3 txq */
+	uint32_t sc_aux_roc_sta_code;	/* errno or ADD_STA status of the last failure */
+	int sc_aux_roc_qid;		/* firmware-assigned aux tx queue */
+	/* P2P Device listen (-itlawdlp2p): objects that exist in the firmware. */
+	int sc_p2p_mac;
+	int sc_p2p_promisc;	/* IN_PROMISC currently set on the P2P MAC */
+	int sc_p2p_bound;
+	int sc_p2p_sta;
+	int sc_p2p_queue;
+	uint32_t sc_p2p_addr_gen;	/* ic_awdl_addr_gen the P2P MAC was programmed with */
+	uint32_t sc_p2p_addr_changes;
+	uint32_t sc_p2p_wait;		/* listen attempts refused while waiting */
+	uint64_t sc_p2p_req_us;
+	uint64_t sc_p2p_start_us;
+	/* SESSION_PROTECTION_NOTIF for MAC 1, by (start, status). */
+	uint32_t sc_p2p_start_fail;
+	uint32_t sc_p2p_end_fail;
+	uint32_t sc_p2p_end_fail_short;	/* status 0 end within 90% of the dwell */
+	uint32_t sc_p2p_dwell_tu;
+	uint32_t sc_p2p_chan_changes;	/* PHY moved to another channel */
+	uint32_t sc_p2p_band_changes;	/* ... across bands (unbind, REMOVE, ADD, bind) */
+	uint32_t sc_aux_roc_apply_gp2;	/* GP2 when the ROC was requested */
+	uint32_t sc_aux_roc_start_gp2;	/* GP2 of the TE START notification */
+	uint32_t sc_aux_roc_uid;
+	uint32_t sc_aux_roc_sent;
+	uint32_t sc_aux_roc_resp_err;
+	uint32_t sc_aux_roc_started;
+	uint32_t sc_aux_roc_ended;
+	uint32_t sc_aux_roc_not_sched;
 
 	/* phy contexts.  we only use the first one */
 	struct iwx_phy_ctxt sc_phyctxt[IWX_NUM_PHY_CTX];

@@ -31,6 +31,9 @@ public:
     virtual bool initWithSkywalkInterfaceAndProvider(IONetworkController *controller, IO80211SkywalkInterface *interface);
     
     virtual bool setLinkState(IO80211LinkState state);
+
+    // Address published as kIOMACAddress once attached; awdl0 overrides it.
+    virtual IOReturn getInterfaceAddress(IOEthernetAddress *addr);
     
     static errno_t bpfOutputPacket(ifnet_t interface, u_int32_t data_link_type,
                                   mbuf_t packet);

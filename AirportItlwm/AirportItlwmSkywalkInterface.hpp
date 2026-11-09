@@ -155,7 +155,7 @@ public:
     virtual IOReturn getCURRENT_NETWORK(apple80211_scan_result *) AIRPORT_SKYWALK_OVERRIDE;
     virtual IOReturn getRSSI_BOUNDS(apple80211_rssi_bounds_data *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
     virtual IOReturn getPOWER_DEBUG_INFO(apple80211_power_debug_info *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
-    virtual IOReturn getHT_CAPABILITY(apple80211_ht_capability *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
+    virtual IOReturn getHT_CAPABILITY(apple80211_ht_capability *) AIRPORT_SKYWALK_OVERRIDE;
     virtual IOReturn getLINK_CHANGED_EVENT_DATA(apple80211_link_changed_event_data *) AIRPORT_SKYWALK_OVERRIDE;
     virtual IOReturn getEXTENDED_STATS(apple80211_extended_stats *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
     virtual IOReturn getBEACON_PERIOD(apple80211_beacon_period_data *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
@@ -301,7 +301,11 @@ public:
     virtual IOReturn setIE(apple80211_ie_data *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
     virtual IOReturn setWOW_TEST(apple80211_wow_test_data *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
     virtual IOReturn setSCANCACHE_CLEAR(void *) AIRPORT_SKYWALK_OVERRIDE;
+#if defined(AIRPORT_WCL) && __IO80211_TARGET != __MAC_15_2
+    virtual IOReturn setVIRTUAL_IF_CREATE(apple80211_virt_if_create_data *) AIRPORT_SKYWALK_OVERRIDE;
+#else
     virtual IOReturn setVIRTUAL_IF_CREATE(apple80211_virt_if_create_data *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
+#endif
     virtual IOReturn setBT_COEX_FLAGS(apple80211_state_data *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
     virtual IOReturn setROAM(apple80211_sta_roam_data *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }
     virtual IOReturn setHT_CAPABILITY(apple80211_ht_capability *) AIRPORT_SKYWALK_OVERRIDE { return kIOReturnUnsupported; }

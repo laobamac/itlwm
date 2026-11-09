@@ -453,6 +453,114 @@ struct ieee80211com {
     uint64_t ic_wcl_rx_packets[4];
 #endif
     void            (*ic_event_handler)(struct ieee80211com *, int, void *);
+    /*
+     * Vendor-specific (category 127) action frames, e.g. Apple AWDL. Returns
+     * non-zero when it consumed the frame. When set, the firmware also passes
+     * foreign management frames, which ieee80211_inputm filters out again.
+     */
+    int             (*ic_vendor_action_handler)(struct ieee80211com *, mbuf_t,
+                        struct ieee80211_rxinfo *);
+    /*
+     * Dwell on a channel for dwell_tu TU without touching net80211 state
+     * (AWDL listen). Returns 0 when started, EBUSY while any scan runs.
+     */
+    int             (*ic_awdl_listen)(struct ieee80211com *, uint8_t chan,
+                        uint16_t dwell_tu);
+    /* Frames the firmware delivered on the listen channel while off-channel. */
+    uint8_t         ic_awdl_listen_chan;
+    uint32_t        ic_awdl_listen_rx_all;
+    uint32_t        ic_awdl_listen_rx_beacon;
+    uint32_t        ic_awdl_listen_rx_action;
+    uint32_t        ic_awdl_listen_done;
+    /* Aux ROC listen: sent, response errors, TE started/ended/not scheduled. */
+    uint32_t        ic_awdl_roc_sent;
+    uint32_t        ic_awdl_roc_resp_err;
+    uint32_t        ic_awdl_roc_started;
+    uint32_t        ic_awdl_roc_ended;
+    uint32_t        ic_awdl_roc_not_sched;
+    uint32_t        ic_awdl_roc_sta_err;
+    uint32_t        ic_awdl_roc_sta_stage;
+    uint32_t        ic_awdl_roc_sta_code;
+    uint32_t        ic_awdl_roc_qid;
+    /* Measured from the firmware's GP2 timestamps, in microseconds. */
+    uint32_t        ic_awdl_roc_last_us;     /* START to END, last ROC */
+    uint32_t        ic_awdl_roc_min_us;
+    uint32_t        ic_awdl_roc_max_us;
+    uint32_t        ic_awdl_roc_delay_us;    /* request to START, last ROC */
+    uint32_t        ic_awdl_roc_start_fail;  /* START notification with status 0 */
+    uint32_t        ic_awdl_roc_end_fail;    /* END notification with status 0 */
+    uint32_t        ic_awdl_roc_end_fail_short;
+    uint32_t        ic_awdl_roc_end_fail_last_us;
+    uint32_t        ic_awdl_roc_chan_changes;
+    uint32_t        ic_awdl_roc_band_changes;
+    /* Every frame delivered while an aux ROC is between START and END. */
+    uint32_t        ic_awdl_roc_rx_target;   /* on the ROC channel */
+    uint32_t        ic_awdl_roc_rx_home;     /* on the station channel */
+    uint32_t        ic_awdl_roc_rx_other;
+    uint8_t         ic_awdl_roc_rx_last_chan;
+    /*
+     * AWDL transmit (stage 3): send one complete 802.11 management frame on
+     * chan while a listen dwell is running there. EAGAIN when not on chan.
+     */
+    int             (*ic_awdl_tx)(struct ieee80211com *, uint8_t chan,
+                        const uint8_t *frame, size_t len);
+    uint32_t        ic_awdl_tx_sent;     /* queued to the firmware */
+    uint32_t        ic_awdl_tx_busy;     /* refused: not dwelling on chan */
+    uint32_t        ic_awdl_tx_err;      /* refused: ring full, no mbuf, DMA */
+    uint32_t        ic_awdl_tx_ok;       /* TX_CMD response success */
+    uint32_t        ic_awdl_tx_fail;
+    uint32_t        ic_awdl_tx_last_status;
+    /*
+     * awdl0's address. The P2P device MAC takes it so the firmware ACKs and
+     * delivers unicast frames peers send to awdl0. ic_awdl_addr_gen bumps on
+     * every change; the driver re-programs the MAC when it differs.
+     */
+    uint8_t         ic_awdl_addr[IEEE80211_ADDR_LEN];
+    uint32_t        ic_awdl_addr_gen;
+    /*
+     * AWDL BSSID from setAWDL_BSSID (Broadcom configures it on its firmware
+     * AWDL interface). Bumps ic_awdl_addr_gen too, so the P2P MAC picks it up.
+     */
+    uint8_t         ic_awdl_bssid[IEEE80211_ADDR_LEN];
+    int             ic_awdl_bssid_valid;
+    /* Unicast frames to ic_awdl_addr (input path, before any filtering). */
+    uint32_t        ic_awdl_rx_uc_action;
+    uint32_t        ic_awdl_rx_uc_data;
+    uint32_t        ic_awdl_rx_uc_other;
+    uint8_t         ic_awdl_rx_uc_last_src[IEEE80211_ADDR_LEN];
+    uint8_t         ic_awdl_rx_uc_last_chan;
+    uint32_t        ic_awdl_p2p_addr_changes;
+    /*
+     * Frames whose addr1 is ic_awdl_addr, counted in the driver right after
+     * the firmware hands them over, before any host filtering; and how many
+     * of those the driver drops before net80211 (decrypt, duplicate, CRC).
+     */
+    uint32_t        ic_awdl_fw_uc_mgmt;
+    uint32_t        ic_awdl_fw_uc_data;
+    uint32_t        ic_awdl_fw_uc_badcrc;
+    uint32_t        ic_awdl_fw_uc_drop_decrypt;
+    uint32_t        ic_awdl_fw_uc_drop_dup;
+    uint8_t         ic_awdl_fw_uc_last_chan;
+    uint16_t        ic_awdl_fw_uc_last_fc;
+    /*
+     * Data frames the firmware hands over that are for neither the station
+     * nor awdl0 (unicast to someone else): the cost of the promiscuous
+     * filter on the P2P MAC.
+     */
+    uint32_t        ic_awdl_fw_foreign_data;
+    /*
+     * Set by the AWDL interface while an AWDL peer is active (seen in the
+     * last 30 s). The P2P MAC only accepts data frames (IN_PROMISC) then,
+     * since Intel firmware has no AWDL interface type that filters by BSSID.
+     */
+    int             ic_awdl_want_data;
+    uint32_t        ic_awdl_promisc_changes;
+    /*
+     * AWDL data frames addressed to ic_awdl_addr. Takes ownership of the
+     * mbuf (802.11 header included); returns non-zero when consumed.
+     */
+    int             (*ic_awdl_data_handler)(struct ieee80211com *, mbuf_t,
+                        struct ieee80211_rxinfo *);
 	CTimeout*		ic_bgscan_timeout;
 	uint32_t		ic_bgscan_fail;
 	u_int8_t		ic_myaddr[IEEE80211_ADDR_LEN];

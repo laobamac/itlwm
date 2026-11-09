@@ -3379,6 +3379,33 @@ struct iwx_fw_channel_info {
     uint8_t reserved;
 } __packed; /*CHANNEL_CONFIG_API_S_VER_2 */
 
+/*
+ * Aux remain-on-channel ("HS20 ROC"), as Linux iwlmvm iwl_mvm_send_aux_roc_cmd:
+ * the firmware takes the aux MAC/station to a channel for a time event; frames
+ * received there come up the normal rx path. HOT_SPOT_CMD_API_S_VER_1 with the
+ * 8-byte channel info (ULTRA_HB_CHANNELS firmware).
+ */
+#define IWX_HOT_SPOT_CMD    0x53
+struct iwx_hs20_roc_req {
+    uint32_t id_and_color;
+    uint32_t action;
+    uint32_t event_unique_id;
+    uint32_t sta_id_and_color;
+    struct iwx_fw_channel_info channel_info;
+    uint8_t node_addr[ETHER_ADDR_LEN];
+    uint16_t reserved;
+    uint32_t apply_time;            /* GP2 */
+    uint32_t apply_time_max_delay;  /* TU */
+    uint32_t duration;              /* TU */
+} __packed;
+static_assert(sizeof(struct iwx_hs20_roc_req) == 44, "HOT_SPOT_CMD_API_S_VER_1 size");
+struct iwx_hs20_roc_res {
+    uint32_t event_unique_id;
+    uint32_t status;
+} __packed;
+/* GP2 timer for AX210 family (Linux cfg/ax210.c gp2_reg_addr). */
+#define IWX_AX210_GP2_REG   0xd02c68
+
 #define IWX_PHY_RX_CHAIN_DRIVER_FORCE_POS    (0)
 #define IWX_PHY_RX_CHAIN_DRIVER_FORCE_MSK \
     (0x1 << IWX_PHY_RX_CHAIN_DRIVER_FORCE_POS)

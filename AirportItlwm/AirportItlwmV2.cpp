@@ -7,6 +7,7 @@
 //
 
 #include "AirportItlwmV2.hpp"
+#include "AirportItlwmAWDLInterface.hpp"
 #include <sys/_netstat.h>
 #include <crypto/sha1.h>
 #include <net80211/ieee80211_priv.h>
@@ -140,6 +141,12 @@ bool AirportItlwm::init(OSDictionary *properties)
     XYLog("%s\n", __PRETTY_FUNCTION__);
     bool ret = super::init(properties);
     awdlSyncEnable = true;
+    fAWDLEnabled = false;
+#if defined(AIRPORT_WCL) && __IO80211_TARGET != __MAC_15_2
+    fAWDLIf = nullptr;
+    fAWDLBsdIf = nullptr;
+    fCreatingAWDL = false;
+#endif
     power_state = 0;
     memset(geo_location_cc, 0, sizeof(geo_location_cc));
     return ret;
@@ -334,6 +341,12 @@ bool AirportItlwm::start(IOService *provider)
     int he_enabled = 0;
     if (PE_parse_boot_argn("itlwm_he", &he_enabled, sizeof(he_enabled)) && he_enabled == 1)
         fHalService->get80211Controller()->ic_userflags |= IEEE80211_F_HEON;
+    fAWDLEnabled = PE_parse_boot_argn("-itlawdl", &boot_value, sizeof(boot_value));
+    if (fAWDLEnabled) {
+        XYLog("experimental AWDL enabled\n");
+        fHalService->get80211Controller()->ic_vendor_action_handler = awdlActionFrameHandler;
+        fHalService->get80211Controller()->ic_awdl_data_handler = awdlDataFrameHandler;
+    }
 #endif
 
     if (!fHalService->attach(pciNub)) {
@@ -468,10 +481,41 @@ bool AirportItlwm::start(IOService *provider)
     return true;
 }
 
+int AirportItlwm::awdlActionFrameHandler(struct ieee80211com *ic, mbuf_t m, struct ieee80211_rxinfo *rxi)
+{
+#if defined(AIRPORT_WCL) && __IO80211_TARGET != __MAC_15_2
+    AirportItlwm *that = OSDynamicCast(AirportItlwm, ic->ic_ac.ac_if.controller);
+    if (!that || !that->fAWDLIf)
+        return 0;
+    return that->fAWDLIf->inputActionFrame(mtod(m, const uint8_t *), mbuf_len(m), rxi);
+#else
+    return 0;
+#endif
+}
+
+// AWDL data frame for awdl0 (stage 4): 802.11 data header, LLC/SNAP with
+// Apple OUI 00:17:f2 protocol 0x0800, then the 8-byte AWDL data header
+// (0x0403, sequence, pad, ethertype). Rebuilt as an Ethernet frame and given
+// to awdl0's BSD interface, as OWL does (seemoo-lab/owl src/rx.c).
+int AirportItlwm::awdlDataFrameHandler(struct ieee80211com *ic, mbuf_t m, struct ieee80211_rxinfo *rxi)
+{
+#if defined(AIRPORT_WCL) && __IO80211_TARGET != __MAC_15_2
+    AirportItlwm *that = OSDynamicCast(AirportItlwm, ic->ic_ac.ac_if.controller);
+    if (!that || !that->fAWDLIf || !that->fAWDLBsdIf)
+        return 0;
+    return that->fAWDLBsdIf->inputAWDLData(m, that->fAWDLIf);
+#else
+    return 0;
+#endif
+}
+
 void AirportItlwm::stop(IOService *provider)
 {
     XYLog("%s\n", __PRETTY_FUNCTION__);XYLog("%s\n", __PRETTY_FUNCTION__);
     struct _ifnet *ifp = &fHalService->get80211Controller()->ic_ac.ac_if;
+#if defined(AIRPORT_WCL) && __IO80211_TARGET != __MAC_15_2
+    destroyAWDLInterface();
+#endif
 #ifdef AIRPORT_WCL
     if (fNetIf)
         static_cast<AirportItlwmSkywalkInterface *>(fNetIf)->stopWCL();
@@ -566,6 +610,12 @@ bool AirportItlwm::configureInterface(IONetworkInterface *netif)
         XYLog("super failed\n");
         return false;
     }
+#if defined(AIRPORT_WCL) && __IO80211_TARGET != __MAC_15_2
+    // awdl0 must not take over the station's net80211 ifnet or statistics.
+    if (AirportItlwmAWDLEthernetInterface *awdl = OSDynamicCast(AirportItlwmAWDLEthernetInterface, netif))
+        return awdl->registerOutputHandler(awdl,
+                                           (IOOutputAction)&AirportItlwmAWDLEthernetInterface::outputAWDL);
+#endif
 
     nd = netif->getParameter(kIONetworkStatsKey);
     if (!nd || !(fpNetStats = (IONetworkStats *)nd->getBuffer())) {
@@ -591,6 +641,20 @@ bool AirportItlwm::configureInterface(IONetworkInterface *netif)
 
 IONetworkInterface *AirportItlwm::createInterface()
 {
+#if defined(AIRPORT_WCL) && __IO80211_TARGET != __MAC_15_2
+    if (fCreatingAWDL) {
+        AirportItlwmAWDLEthernetInterface *awdl = new AirportItlwmAWDLEthernetInterface;
+        if (awdl) {
+            awdl->setAWDLAddress(fAWDLMac);
+            awdl->setAWDLOwner(fAWDLIf);
+        }
+        if (awdl && !awdl->initWithSkywalkInterfaceAndProvider(this, fAWDLIf)) {
+            awdl->release();
+            awdl = nullptr;
+        }
+        return awdl;
+    }
+#endif
     AirportItlwmEthernetInterface *netif = new AirportItlwmEthernetInterface;
     if (!netif)
         return NULL;
@@ -993,6 +1057,18 @@ getCARD_CAPABILITIES(OSObject *object,
     // WCL uses this capability together with the BSS HE IE for PHY reporting.
     if (caps & IEEE80211_C_HE)
         cd->capabilities[17] |= 0x80;
+    // wifip2pd only asks for an AWDL (role 6) virtual interface when capabilities[4]
+    // bit 0 is set; AppleBCMWLANCore sets the same bit when its firmware supports AWDL.
+    if (fAWDLEnabled) {
+        cd->capabilities[4] |= 1;
+        // Capability 29 (byte 3, 0x20): IO80211AWDLPeerManager::configureValidAWDLChannels
+        // tests it and otherwise logs "Dual band not supported" and keeps AWDL on
+        // 2.4 GHz only (social 6, no 5 GHz channels), so its channel sequence never
+        // overlaps a peer on 5 GHz. AppleBCMWLANCore::getCARD_CAPABILITIES sets it
+        // from a firmware capability (feature flag 28). Only with -itlawdl.
+        if (fHalService->get80211Controller()->ic_modecaps & (1 << IEEE80211_MODE_11A))
+            cd->capabilities[3] |= 0x20;
+    }
 #else
     cd->capabilities[2] = 0xFF; // BURST, WME, SHORT_GI_40MHZ, SHORT_GI_20MHZ, WOW, TSN, ?, ?
     cd->capabilities[3] = 0x2B;

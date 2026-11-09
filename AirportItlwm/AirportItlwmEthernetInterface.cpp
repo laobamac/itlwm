@@ -60,7 +60,7 @@ attachToDataLinkLayer( IOOptionBits options, void *parameter )
         interface->setProperty("IOInterfaceName", OSString::withCString(infName));
         interface->setProperty(kIOInterfaceUnit, OSNumber::withNumber(ifnet_unit(getIfnet()), 8));
         interface->setProperty(kIOInterfaceNamePrefix, OSString::withCString(ifnet_name(getIfnet())));
-        if (OSDynamicCast(IOEthernetController, getController())->getHardwareAddress(&addr) == kIOReturnSuccess)
+        if (getInterfaceAddress(&addr) == kIOReturnSuccess)
             setProperty(kIOMACAddress,  (void *) &addr,
                         kIOEthernetAddressSize);
 #ifdef AIRPORT_WCL
@@ -115,6 +115,12 @@ bpfTap(ifnet_t interface, u_int32_t data_link_type, bpf_tap_mode direction)
 {
     XYLog("%s data_link_type: %d direction: %d\n", __FUNCTION__, data_link_type, direction);
     return 0;
+}
+
+IOReturn AirportItlwmEthernetInterface::
+getInterfaceAddress(IOEthernetAddress *addr)
+{
+    return OSDynamicCast(IOEthernetController, getController())->getHardwareAddress(addr);
 }
 
 bool AirportItlwmEthernetInterface::

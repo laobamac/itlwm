@@ -78,28 +78,68 @@ static_assert(sizeof(SequoiaLqmUpdate) == 0x150, "Sequoia LQM size");
 static_assert(offsetof(SequoiaLqmUpdate, rssi) == 4, "Sequoia LQM RSSI offset");
 
 // WCLNetManager::handleLqmUpdate consumes this 0x1dc snapshot.
-// Only beacon reception is valid; unavailable radio measurements stay invalid.
-struct LqmBeaconUpdate {
-    uint8_t prefix[0x28];
-    uint32_t receivedDelta;
-    uint32_t scheduledDelta;
-    uint8_t beaconValid;
-    uint8_t reserved[0x1d8 - 0x31];
-    uint8_t snapshotValid;
-    uint8_t countersValid;
-    uint8_t tail[2];
+// Radio measurements (RSSI, noise, SNR) and beacon reception are reported.
+struct __attribute__((packed)) LqmBeaconUpdate {
+    uint8_t rssiValid;                          // 0x00
+    uint8_t reserved0[3];                       // 0x01..0x03
+    int32_t rssi;                               // 0x04..0x07
+    uint8_t reservedCore;                       // 0x08
+    int8_t core0Rssi;                           // 0x09
+    int8_t core1Rssi;                           // 0x0a
+    uint8_t snrValid;                           // 0x0b
+    int16_t snr;                                // 0x0c..0x0d
+    uint8_t noiseValid;                         // 0x0e
+    uint8_t reservedPad;                        // 0x0f
+    int16_t noise;                              // 0x10..0x11
+    uint8_t ccaValid;                           // 0x12
+    uint8_t cca;                                // 0x13
+    uint8_t reserved1[20];                      // 0x14..0x27 (20 bytes)
+    uint32_t receivedDelta;                     // 0x28..0x2b
+    uint32_t scheduledDelta;                    // 0x2c..0x2f
+    uint8_t beaconValid;                        // 0x30
+    uint8_t reserved2[0x1d8 - 0x31];            // 0x31..0x1d7
+    uint8_t snapshotValid;                      // 0x1d8
+    uint8_t countersValid;                      // 0x1d9
+    uint8_t tail[2];                            // 0x1da..0x1db
 };
 static_assert(sizeof(LqmBeaconUpdate) == 0x1dc, "WCL LQM update size");
+static_assert(offsetof(LqmBeaconUpdate, rssiValid) == 0x00, "WCL rssiValid offset");
+static_assert(offsetof(LqmBeaconUpdate, rssi) == 0x04, "WCL rssi offset");
+static_assert(offsetof(LqmBeaconUpdate, core0Rssi) == 0x09, "WCL core0Rssi offset");
+static_assert(offsetof(LqmBeaconUpdate, core1Rssi) == 0x0a, "WCL core1Rssi offset");
+static_assert(offsetof(LqmBeaconUpdate, snrValid) == 0x0b, "WCL snrValid offset");
+static_assert(offsetof(LqmBeaconUpdate, snr) == 0x0c, "WCL snr offset");
+static_assert(offsetof(LqmBeaconUpdate, noiseValid) == 0x0e, "WCL noiseValid offset");
+static_assert(offsetof(LqmBeaconUpdate, noise) == 0x10, "WCL noise offset");
+static_assert(offsetof(LqmBeaconUpdate, ccaValid) == 0x12, "WCL ccaValid offset");
+static_assert(offsetof(LqmBeaconUpdate, cca) == 0x13, "WCL cca offset");
 static_assert(offsetof(LqmBeaconUpdate, receivedDelta) == 0x28, "WCL beacon delta offset");
+static_assert(offsetof(LqmBeaconUpdate, scheduledDelta) == 0x2c, "WCL scheduled delta offset");
 static_assert(offsetof(LqmBeaconUpdate, beaconValid) == 0x30, "WCL beacon valid offset");
 static_assert(offsetof(LqmBeaconUpdate, snapshotValid) == 0x1d8, "WCL snapshot valid offset");
-inline bool makeBeaconUpdate(uint32_t receivedDelta, LqmBeaconUpdate &out)
+static_assert(offsetof(LqmBeaconUpdate, countersValid) == 0x1d9, "WCL counters valid offset");
+
+inline bool makeBeaconUpdate(uint32_t receivedDelta, LqmBeaconUpdate &out,
+                             int32_t rssi = 0, int16_t noise = 0)
 {
     out = {};
     if (!receivedDelta)
         return false;
     out.receivedDelta = receivedDelta;
+    out.scheduledDelta = receivedDelta;
     out.beaconValid = out.snapshotValid = out.countersValid = 1;
+    if (rssi < 0) {
+        out.rssiValid = 1;
+        out.rssi = rssi;
+        out.core0Rssi = (int8_t)(rssi < -128 ? -128 : (rssi > 127 ? 127 : rssi));
+        out.core1Rssi = out.core0Rssi;
+        if (noise < 0) {
+            out.noiseValid = 1;
+            out.noise = noise;
+            out.snrValid = 1;
+            out.snr = (int16_t)(rssi - noise);
+        }
+    }
     return true;
 }
 

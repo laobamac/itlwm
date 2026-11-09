@@ -330,11 +330,16 @@ bool AirportItlwm::start(IOService *provider)
     if (PE_parse_boot_argn("-noht40", &boot_value, sizeof(boot_value)))
         fHalService->get80211Controller()->ic_userflags |= IEEE80211_F_NOHT40;
 
-#ifdef AIRPORT_WCL
+    /* 802.11ax (HE) opt-in.
+     * The HE stack itself lives in itl80211/ and itlwm/hal_iwx/ and is shared
+     * by every target -- it is gated only by ic_userflags, not by the host
+     * interface layer. Upstream wrapped this boot-arg in AIRPORT_WCL so only
+     * the Sequoia/Tahoe WCL builds could enable it; the Sonoma (IO80211Family
+     * V2) targets compile this very file too, so expose the switch there as
+     * well. Behaviour is unchanged when the boot-arg is absent. */
     int he_enabled = 0;
     if (PE_parse_boot_argn("itlwm_he", &he_enabled, sizeof(he_enabled)) && he_enabled == 1)
         fHalService->get80211Controller()->ic_userflags |= IEEE80211_F_HEON;
-#endif
 
     if (!fHalService->attach(pciNub)) {
         XYLog("attach fail\n");

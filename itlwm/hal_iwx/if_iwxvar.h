@@ -344,6 +344,16 @@ struct iwx_tx_data {
     uint8_t type;
 };
 
+/*
+ * TX A-MSDU limits. The body of an A-MSDU must fit one slot's TX buffer:
+ * IWX_AMSDU_MAX_BODY for rings with the default buffers (4 KB with AppleVTD),
+ * IWX_AMSDU_MAP_SIZE for Block Ack queues, for A-MSDUs up to ~11 KB
+ * (iwlwifi sends ~10.2 KB on the same AP).
+ */
+#define IWX_AMSDU_MAX_BODY	4096
+#define IWX_AMSDU_MAX_SUBF	8
+#define IWX_AMSDU_MAP_SIZE	12288
+
 struct iwx_tx_ring {
 	struct iwx_dma_info	desc_dma;
 	struct iwx_dma_info	cmd_dma;
@@ -358,6 +368,7 @@ struct iwx_tx_ring {
 	int			queued;
 	int			cur;
 	int			tail;
+	uint32_t		map_size;	/* smallest TX buffer of the ring's slots (bytes), 0 = not set */
 };
 
 #define IWX_RX_MQ_RING_COUNT	512
@@ -611,6 +622,9 @@ struct iwx_softc {
     struct iwx_ba_task_data    ba_rx;
     struct iwx_ba_task_data    ba_tx;
     
+    /* TX A-MSDU: the firmware's TLC A-MSDU notification (0 = not allowed yet). */
+    uint16_t sc_amsdu_size;
+    uint16_t sc_amsdu_tids;
     struct iwx_tid_data sc_tid_data[IWX_MAX_TID_COUNT + 1];//per tid data + mgmt. Look at %iwx_tid_data.
 
     /* Task for ERP/HT prot/slot-time/EDCA updates. */

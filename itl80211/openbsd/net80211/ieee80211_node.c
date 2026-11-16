@@ -2509,6 +2509,7 @@ ieee80211_setup_vhtcaps(struct ieee80211com *ic, struct ieee80211_node *ni, cons
     uint32_t new_vhtcap = 0, peer_vhtcap;
     /* vht capability */
     peer_vhtcap = le32dec(ie + 2);
+    ni->ni_vht_peer_max_mpdu = peer_vhtcap & IEEE80211_VHTCAP_MAX_MPDU_MASK;
     /* suppmcs */
     rx_mcs_map = le16dec(ie + 6);
     rx_highest = le16dec(ie + 8);
@@ -2784,6 +2785,7 @@ void
 ieee80211_clear_vhtcaps(struct ieee80211_node *ni)
 {
     ni->ni_vhtcaps = 0;
+    ni->ni_vht_peer_max_mpdu = 0;
     memset(&ni->ni_vht_mcsinfo, 0, sizeof(ni->ni_vht_mcsinfo));
     
     ni->ni_flags &= ~(IEEE80211_NODE_VHT | IEEE80211_NODE_VHT_SGI80 |

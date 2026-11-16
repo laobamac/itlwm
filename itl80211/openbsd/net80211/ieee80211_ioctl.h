@@ -430,6 +430,7 @@ struct ieee80211_nodereq_all {
 #define IEEE80211_F_NOMIMO    0x00000008    /* CONF: disable MIMO */
 #define IEEE80211_F_NOVHT       0x00000010  /* CONF: disable 11ac */
 #define IEEE80211_F_NOHT40      0x00000020  /* CONF: disable 40mhz on 2.4Ghz channel */
+#define IEEE80211_F_NOAMSDU     0x00000040  /* CONF: disable TX A-MSDU */
 #define IEEE80211_F_USERBITS    "\20\01HIDENWID\02NOBRIDGE\03STAYAUTH\04NOMIMO"
 
 struct ieee80211_flags {

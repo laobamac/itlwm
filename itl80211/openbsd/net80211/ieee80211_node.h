@@ -412,6 +412,7 @@ struct ieee80211_node {
     
     /* VHT state */
     uint32_t        ni_vhtcaps;
+    uint8_t         ni_vht_peer_max_mpdu;  /* AP's own VHT max MPDU length code (0-2), not intersected */
     uint16_t        ni_vht_basicmcs;
     uint16_t        ni_vht_pad2;
     struct ieee80211_vht_mcs_info    ni_vht_mcsinfo;

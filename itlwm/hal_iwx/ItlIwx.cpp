@@ -123,6 +123,29 @@
 #include <sys/_task.h>
 #include <sys/pcireg.h>
 #include <net80211/ieee80211_priv.h>
+#include <net/if_llc.h>     /* TX A-MSDU subframes (LLC/SNAP) */
+
+/*
+ * TX A-MSDU: several Ethernet packets per 802.11 frame. Boot-arg -noamsdu
+ * (IEEE80211_F_NOAMSDU) turns it off; the firmware is then told max_mpdu_len 0,
+ * as before. Limits: IWX_AMSDU_* in if_iwxvar.h.
+ */
+
+/* The AP's own maximum MPDU length (what Linux sends as TLC max_mpdu_len). */
+uint16_t ItlIwx::
+iwx_peer_max_mpdu(struct ieee80211_node *ni)
+{
+    if (ni->ni_flags & IEEE80211_NODE_VHT) {
+        switch (ni->ni_vht_peer_max_mpdu) {
+        case 2: return 11454;
+        case 1: return 7991;
+        default: return 3895;
+        }
+    }
+    if (ni->ni_flags & IEEE80211_NODE_HT)
+        return (ni->ni_htcaps & IEEE80211_HTCAP_AMSDU7935) ? 4095 : 3839;
+    return 0;
+}
 
 #define super ItlHalService
 OSDefineMetaClassAndStructors(ItlIwx, ItlHalService)
@@ -3551,6 +3574,7 @@ iwx_tvqm_enable_txq(struct iwx_softc *sc, int tid, int ssn, uint32_t size)
     int fwqid;
     uint32_t wr_idx;
     size_t resp_len;
+    bool big;
     struct iwx_tx_queue_cfg_cmd cmd = {
         .flags = htole16(IWX_TX_QUEUE_CFG_ENABLE_QUEUE),
         .sta_id = IWX_STATION_ID,
@@ -3605,14 +3629,30 @@ iwx_tvqm_enable_txq(struct iwx_softc *sc, int tid, int ssn, uint32_t size)
     ring->cmd = (struct iwx_device_cmd*)ring->cmd_dma.vaddr;
 
     paddr = ring->cmd_dma.paddr;
+    /*
+     * TX A-MSDU: Block Ack queues get 12 KB buffers per slot, so A-MSDUs of
+     * up to ~7 full-size packets fit. A slot falls back to the default size
+     * if the DMA pool has no room; ring->map_size keeps the smallest, which
+     * caps the A-MSDU length for this ring.
+     */
+    big = !(sc->sc_ic.ic_userflags & IEEE80211_F_NOAMSDU) && tid != IWX_MGMT_TID &&
+        sc->sc_device_family < IWX_DEVICE_FAMILY_AX210;
+    ring->map_size = big ? IWX_AMSDU_MAP_SIZE : IWX_AMSDU_MAX_BODY;
     for (i = 0; i < ring->ring_count; i++) {
         struct iwx_tx_data *data = &ring->data[i];
 
         data->cmd_paddr = paddr;
         paddr += sizeof(struct iwx_device_cmd);
-        err = bus_dmamap_create(sc->sc_dmat, MCLBYTES,
-                                IWX_TFH_NUM_TBS - 2, MCLBYTES, 0, BUS_DMA_NOWAIT,
-                                &data->map);
+        err = big ? bus_dmamap_create(sc->sc_dmat, IWX_AMSDU_MAP_SIZE,
+                                      IWX_TFH_NUM_TBS - 2, MCLBYTES, 0, BUS_DMA_NOWAIT,
+                                      &data->map) : -1;
+        if (err) {
+            err = bus_dmamap_create(sc->sc_dmat, MCLBYTES,
+                                    IWX_TFH_NUM_TBS - 2, MCLBYTES, 0, BUS_DMA_NOWAIT,
+                                    &data->map);
+            if (!err)
+                ring->map_size = IWX_AMSDU_MAX_BODY;
+        }
         if (err) {
             XYLog("%s: could not create TX buf DMA map\n",
                   DEVNAME(sc));
@@ -7087,7 +7127,15 @@ iwx_tx(struct iwx_softc *sc, mbuf_t m, struct ieee80211_node *ni, int ac)
     //    totlen = m->m_pkthdr.len;
     totlen = mbuf_pkthdr_len(m);
     
-    offload_assist = itlTxOffloadHeader(hdrlen);
+    /*
+     * TX A-MSDU (built in iwx_encap_amsdu): like iwlwifi, mark the command as
+     * A-MSDU instead of asking for the 2-byte pad after the MAC header; the
+     * subframe headers follow the 802.11 header directly.
+     */
+    const bool is_amsdu = type == IEEE80211_FC0_TYPE_DATA && ieee80211_has_qos(wh) &&
+        (ieee80211_get_qos(wh) & IEEE80211_QOS_AMSDU);
+    offload_assist = is_amsdu ? (IWX_TX_CMD_OFFLD_MH_SIZE(hdrlen / 2) | IWX_TX_CMD_OFFLD_AMSDU) :
+        itlTxOffloadHeader(hdrlen);
     
     if (sc->sc_device_family >= IWX_DEVICE_FAMILY_AX210) {
         tx_gen3 = (struct iwx_tx_cmd_gen3 *)cmd->data;
@@ -7141,7 +7189,10 @@ iwx_tx(struct iwx_softc *sc, mbuf_t m, struct ieee80211_node *ni, int ac)
     memcpy(&desc->tbs[0].addr, &paddr, sizeof(paddr));
     if (data->cmd_paddr >> 32 != (data->cmd_paddr + le32toh(desc->tbs[0].tb_len)) >> 32)
         DPRINTF(("%s: TB0 crosses 32bit boundary\n", __func__));
-    desc->tbs[1].tb_len = htole16(_ALIGN(sizeof(struct iwx_cmd_header) +
+    /* Not dword-aligned for an A-MSDU: the subframe header aligns it (iwlwifi). */
+    desc->tbs[1].tb_len = htole16(is_amsdu ?
+                                  (sizeof(struct iwx_cmd_header) + cmd_size + hdrlen - IWX_FIRST_TB_SIZE) :
+                                  _ALIGN(sizeof(struct iwx_cmd_header) +
                                   cmd_size + hdrlen - IWX_FIRST_TB_SIZE, 4));
     paddr = htole64(data->cmd_paddr + IWX_FIRST_TB_SIZE);
     memcpy(&desc->tbs[1].addr, &paddr, sizeof(paddr));
@@ -9433,6 +9484,15 @@ iwx_rs_init(struct iwx_softc *sc, struct iwx_node *in, bool update)
     cmd_id = iwx_cmd_id(IWX_TLC_MNG_CONFIG_CMD, IWX_DATA_PATH_GROUP, 0);
     cmdver = iwx_lookup_cmd_ver(sc, IWX_DATA_PATH_GROUP, IWX_TLC_MNG_CONFIG_CMD);
     XYLog("%s cmdver %d\n", __FUNCTION__, cmdver);
+    /* TX A-MSDU: tell the firmware the AP's max MPDU length, as iwlwifi does. */
+    if (!(sc->sc_ic.ic_userflags & IEEE80211_F_NOAMSDU) &&
+        isset(sc->sc_enabled_capa, IWX_UCODE_TLV_CAPA_CSUM_SUPPORT))
+        cfg_cmd.max_mpdu_len = htole16(iwx_peer_max_mpdu(ni));
+    if (!update) {
+        /* New association: wait for the firmware's A-MSDU notification again. */
+        sc->sc_amsdu_size = 0;
+        sc->sc_amsdu_tids = 0;
+    }
     if (cmdver == 4) {
         return iwx_send_cmd_pdu(sc, cmd_id, IWX_CMD_ASYNC,
                                 sizeof(cfg_cmd), &cfg_cmd);
@@ -9583,6 +9643,11 @@ iwx_rs_update(struct iwx_softc *sc, struct iwx_tlc_update_notif *notif)
     uint8_t notifver;
     uint32_t format;
 
+    /* TX A-MSDU: the firmware's A-MSDU size and TIDs (size 0 = A-MSDU off). */
+    if (notif->sta_id == IWX_STATION_ID && (le32toh(notif->flags) & IWX_TLC_NOTIF_FLAG_AMSDU)) {
+        sc->sc_amsdu_size = (uint16_t)MIN(le32toh(notif->amsdu_size), 0xffffU);
+        sc->sc_amsdu_tids = (uint16_t)le32toh(notif->amsdu_enabled);
+    }
     if (notif->sta_id != IWX_STATION_ID ||
         (le32toh(notif->flags) & IWX_TLC_NOTIF_FLAG_RATE) == 0)
         return;
@@ -10837,6 +10902,146 @@ iwx_init(struct _ifnet *ifp)
     return 0;
 }
 
+/*
+ * TX A-MSDU: encapsulate m like ieee80211_encap() and, when the
+ * firmware allows A-MSDU for its TID (TLC notification) and a TX Block Ack
+ * agreement exists, append the next queued packets of the same TID as A-MSDU
+ * subframes (802.11-2016 9.3.2.2): DA, SA, length, LLC/SNAP + payload, each
+ * subframe but the last padded to 4 bytes. One 802.11 QoS header (A-MSDU
+ * present bit, Address 3 = BSSID) and one sequence number cover all of them.
+ * Only packets already waiting in if_snd are used; nothing is held back.
+ * *nsubf returns the number of packets in the frame.
+ */
+mbuf_t ItlIwx::
+iwx_encap_amsdu(struct iwx_softc *sc, struct _ifnet *ifp, mbuf_t m,
+                struct ieee80211_node **pni, int *nsubf)
+{
+    struct ieee80211com *ic = &sc->sc_ic;
+    struct ether_header eh, eh2;
+    struct ieee80211_node *ni;
+    struct ieee80211_frame *wh;
+    uint8_t hbuf[64], sb[3 + sizeof(struct ether_header) + LLC_SNAPFRAMELEN];
+    size_t hdrlen, body, total, maxlen;
+    mbuf_t last = NULL;
+    int tid, n = 1;
+
+    *nsubf = 1;
+    if (mbuf_pkthdr_len(m) < sizeof(eh))
+        return ieee80211_encap(ifp, m, pni);
+    mbuf_copydata(m, 0, sizeof(eh), &eh);
+    if ((m = ieee80211_encap(ifp, m, pni)) == NULL)
+        return NULL;
+    ni = *pni;
+    if ((ic->ic_userflags & IEEE80211_F_NOAMSDU) || !sc->sc_amsdu_size || ic->ic_opmode != IEEE80211_M_STA ||
+        sc->sc_device_family >= IWX_DEVICE_FAMILY_AX210 || !ni ||
+        ETHER_IS_MULTICAST(eh.ether_dhost) || eh.ether_type == htons(ETHERTYPE_PAE) ||
+        !ifp->if_snd.queue)
+        return m;
+    wh = mtod(m, struct ieee80211_frame *);
+    if ((wh->i_fc[0] & IEEE80211_FC0_TYPE_MASK) != IEEE80211_FC0_TYPE_DATA ||
+        !ieee80211_has_qos(wh) || ieee80211_has_addr4(wh))
+        return m;
+    tid = ieee80211_get_qos(wh) & IEEE80211_QOS_TID;
+    if (!(sc->sc_amsdu_tids & (1 << tid)) ||
+        ni->ni_tx_ba[tid].ba_state != IEEE80211_BA_AGREED ||
+        sc->sc_tid_data[tid].qid == 0 || sc->sc_tid_data[tid].qid == IWX_INVALID_QUEUE)
+        return m;
+    if (wh->i_fc[1] & IEEE80211_FC1_PROTECTED) {
+        struct ieee80211_key *k = ieee80211_get_txkey(ic, wh, ni);
+        if (!k || k->k_cipher != IEEE80211_CIPHER_CCMP)
+            return m;   /* software crypto: no A-MSDU */
+    }
+    hdrlen = ieee80211_get_hdrlen(wh);
+    if (hdrlen + sizeof(eh) > sizeof(hbuf))
+        return m;
+    {
+        /* The A-MSDU body must fit the BA queue's TX buffers (see iwx_tvqm_enable_txq). */
+        const struct iwx_tx_ring *ring = &sc->txq[sc->sc_tid_data[tid].qid];
+        const size_t cap = ring->map_size ? ring->map_size : IWX_AMSDU_MAX_BODY;
+        maxlen = MIN(MIN((size_t)sc->sc_amsdu_size, (size_t)iwx_peer_max_mpdu(ni)), cap);
+    }
+    body = mbuf_pkthdr_len(m) - hdrlen;         /* LLC/SNAP + payload */
+    total = sizeof(eh) + body;                  /* first subframe */
+
+    while (n < IWX_AMSDU_MAX_SUBF) {
+        mbuf_t nx = ifp->if_snd.queue->peek();
+        size_t len2, pad, sublen;
+
+        if (!nx)
+            break;
+        len2 = mbuf_pkthdr_len(nx);
+        if (len2 < sizeof(eh2) || !(mbuf_flags(nx) & MBUF_PKTHDR))
+            break;
+        mbuf_copydata(nx, 0, sizeof(eh2), &eh2);
+        if (ETHER_IS_MULTICAST(eh2.ether_dhost) || eh2.ether_type == htons(ETHERTYPE_PAE) ||
+            ieee80211_classify(ic, nx) != tid)
+            break;
+        pad = (4 - (total & 3)) & 3;
+        sublen = len2 + LLC_SNAPFRAMELEN;       /* 14-byte subframe header + LLC/SNAP + payload */
+        if (total + pad + sublen > maxlen)
+            break;
+        if (n == 1) {
+            /* Turn the encapsulated frame into the first subframe. */
+            struct ieee80211_qosframe *qwh = (struct ieee80211_qosframe *)hbuf;
+            uint16_t blen = htons((uint16_t)body);
+            mbuf_copydata(m, 0, hdrlen, hbuf);
+            qwh->i_qos[0] |= IEEE80211_QOS_AMSDU;
+            IEEE80211_ADDR_COPY(qwh->i_addr3, ni->ni_bssid);
+            memcpy(hbuf + hdrlen, eh.ether_dhost, ETHER_ADDR_LEN);
+            memcpy(hbuf + hdrlen + ETHER_ADDR_LEN, eh.ether_shost, ETHER_ADDR_LEN);
+            memcpy(hbuf + hdrlen + 2 * ETHER_ADDR_LEN, &blen, 2);
+            mbuf_adj(m, (int)hdrlen);
+            if (mbuf_prepend(&m, hdrlen + sizeof(eh), MBUF_DONTWAIT) != 0 || !m ||
+                mbuf_copyback(m, 0, hdrlen + sizeof(eh), hbuf, MBUF_DONTWAIT) != 0) {
+                if (m)
+                    mbuf_freem(m);
+                ieee80211_release_node(ic, ni);
+                *pni = NULL;
+                return NULL;
+            }
+            last = m;
+            while (mbuf_next(last))
+                last = mbuf_next(last);
+        }
+        nx = ifq_dequeue(&ifp->if_snd);         /* the packet we peeked: we are the only consumer */
+        if (!nx)
+            break;
+        if (mbuf_prepend(&nx, LLC_SNAPFRAMELEN + pad, MBUF_DONTWAIT) != 0 || !nx) {
+            if (nx)
+                mbuf_freem(nx);
+            if (ifp->netStat)
+                ifp->netStat->outputErrors++;
+            break;
+        }
+        {
+            uint16_t slen = htons((uint16_t)(len2 - sizeof(eh2) + LLC_SNAPFRAMELEN));
+            memset(sb, 0, pad);
+            memcpy(sb + pad, eh2.ether_dhost, ETHER_ADDR_LEN);
+            memcpy(sb + pad + ETHER_ADDR_LEN, eh2.ether_shost, ETHER_ADDR_LEN);
+            memcpy(sb + pad + 2 * ETHER_ADDR_LEN, &slen, 2);
+            sb[pad + 14] = sb[pad + 15] = LLC_SNAP_LSAP;
+            sb[pad + 16] = LLC_UI;
+            sb[pad + 17] = sb[pad + 18] = sb[pad + 19] = 0;
+            memcpy(sb + pad + 20, &eh2.ether_type, 2);
+        }
+        if (mbuf_copyback(nx, 0, pad + sizeof(eh2) + LLC_SNAPFRAMELEN, sb, MBUF_DONTWAIT) != 0) {
+            mbuf_freem(nx);
+            if (ifp->netStat)
+                ifp->netStat->outputErrors++;
+            break;
+        }
+        mbuf_setnext(last, nx);
+        while (mbuf_next(last))
+            last = mbuf_next(last);
+        total += pad + sublen;
+        n++;
+    }
+    if (n > 1)
+        mbuf_pkthdr_setlen(m, hdrlen + total);
+    *nsubf = n;
+    return m;
+}
+
 IOReturn ItlIwx::
 _iwx_start_task(OSObject *target, void *arg0, void *arg1, void *arg2, void *arg3)
 {
@@ -10848,6 +11053,7 @@ _iwx_start_task(OSObject *target, void *arg0, void *arg1, void *arg2, void *arg3
     struct ether_header *eh;
     mbuf_t m;
     int ac = EDCA_AC_BE; /* XXX */
+    int nsubf;
     
     if (!(ifp->if_flags & IFF_RUNNING) || ifq_is_oactive(&ifp->if_snd) ||
         (sc->sc_flags & (IWX_FLAG_SHUTDOWN | IWX_FLAG_TXFLUSH)) ||
@@ -10856,6 +11062,7 @@ _iwx_start_task(OSObject *target, void *arg0, void *arg1, void *arg2, void *arg3
     }
     
     for (;;) {
+        nsubf = 1;
         /* why isn't this done per-queue? */
         if (!sc->qfullmsk.empty()) {
             ifq_set_oactive(&ifp->if_snd);
@@ -10893,7 +11100,7 @@ _iwx_start_task(OSObject *target, void *arg0, void *arg1, void *arg2, void *arg3
         if (ifp->if_bpf != NULL)
             bpf_mtap(ifp->if_bpf, m, BPF_DIRECTION_OUT);
 #endif
-        if ((m = ieee80211_encap(ifp, m, &ni)) == NULL) {
+        if ((m = that->iwx_encap_amsdu(sc, ifp, m, &ni, &nsubf)) == NULL) {
             ifp->netStat->outputErrors++;
             continue;
         }
@@ -10908,7 +11115,7 @@ _iwx_start_task(OSObject *target, void *arg0, void *arg1, void *arg2, void *arg3
             ifp->netStat->outputErrors++;
             continue;
         }
-        ifp->netStat->outputPackets++;
+        ifp->netStat->outputPackets += nsubf;
         
         if (ifp->if_flags & IFF_UP) {
             sc->sc_tx_timer = 15;

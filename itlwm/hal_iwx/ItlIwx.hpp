@@ -277,6 +277,8 @@ public:
     int    iwx_enable_txq(struct iwx_softc *, int, int, int, int);
     int     iwx_tvqm_alloc_txq(struct iwx_softc *, int, int);
     int     iwx_tvqm_enable_txq(struct iwx_softc *, int, int, uint32_t);
+    uint16_t    iwx_peer_max_mpdu(struct ieee80211_node *);
+    mbuf_t  iwx_encap_amsdu(struct iwx_softc *, struct _ifnet *, mbuf_t, struct ieee80211_node **, int *);
     void    iwx_post_alive(struct iwx_softc *);
     int iwx_send_time_event_cmd(struct iwx_softc *sc,
                             const struct iwx_time_event_cmd *cmd);

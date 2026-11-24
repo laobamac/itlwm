@@ -629,8 +629,21 @@ ieee80211_ht_negotiate(struct ieee80211com *ic, struct ieee80211_node *ni)
 	}
 
 	if (ic->ic_opmode == IEEE80211_M_STA) {
-		/* We must support the AP's basic MCS set. */
-		for (i = 0; i < IEEE80211_HT_NUM_MCS; i++) {
+		/*
+		 * We must support the AP's basic MCS set, within the number
+		 * of spatial streams we support. Some APs list MCS for more
+		 * streams than a client can have as basic (e.g. a 4-stream
+		 * gateway listing MCS 0-31); refusing HT for that leaves the
+		 * connection without A-MPDU. Other clients still use HT with
+		 * such APs, so ignore basic MCS beyond our streams and the
+		 * special MCS 32 and up.
+		 */
+		/* ic_sup_mcs bytes 0-3 = MCS 0-31, one byte per spatial stream (HT has at most 4) */
+		int nss = 0;
+		for (i = 0; i < 4; i++)
+			if (ic->ic_sup_mcs[i])
+				nss = i + 1;
+		for (i = 0; i < nss * 8; i++) {
 			if (isset(ni->ni_basic_mcs, i) &&
 			    !isset(ic->ic_sup_mcs, i)) {
 				ic->ic_stats.is_ht_nego_no_basic_mcs++;

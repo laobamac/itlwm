@@ -1,3 +1,17 @@
+## 该项目目的仅为为各路开发者提供macOS Sequoia和Tahoe的原生WCL接口，截至目前我的目的已达到，请用户转至此项目的下游项目，如ForbiddenItlwm以获得持续更新。
+
+## 高三生活忙碌，我将会把精力投入下一个项目的奠基和开创
+
+## 未来见
+
+## The purpose of this project is only to provide the native WCL interface of macOS Sequoia and Tahoe for developers. So far, my purpose has been achieved. Please transfer users to the downstream projects of this project, such as ForbiddenItlwm, to get continuous updates.
+
+## The senior year of high school is busy, and I will devote my energy to laying the foundation and creation of the next project.
+
+## See you in the future
+----
+
+
 [![Version](https://img.shields.io/github/v/tag/laobamac/itlwm?style=flat&label=Downloads)](https://github.com/laobamac/itlwm/releases)
 # itlwm
 

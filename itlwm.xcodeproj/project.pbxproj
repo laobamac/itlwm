@@ -1293,7 +1293,7 @@
 		F8F884F22791286E00545F2C /* iwlwifi-Qu-b0-jf-b0-68.ucode */ = {isa = PBXFileReference; lastKnownFileType = file; path = "iwlwifi-Qu-b0-jf-b0-68.ucode"; sourceTree = "<group>"; };
 		F8F884F32791289200545F2C /* iwlwifi-Qu-c0-hr-b0-68.ucode */ = {isa = PBXFileReference; lastKnownFileType = file; path = "iwlwifi-Qu-c0-hr-b0-68.ucode"; sourceTree = "<group>"; };
 		F8F884F42791289C00545F2C /* iwlwifi-Qu-c0-jf-b0-68.ucode */ = {isa = PBXFileReference; lastKnownFileType = file; path = "iwlwifi-Qu-c0-jf-b0-68.ucode"; sourceTree = "<group>"; };
-		F8F884F5279128B300545F2C /* iwlwifi-QuZ-a0-hr-b0-68.ucode */ = {isa = PBXFileReference; lastKnownFileType = file; path = "iwlwifi-QuZ-a0-hr-b0-68.ucode"; sourceTree = "<group>"; };
+		F8F884F5279128B300545F2C /* iwlwifi-QuZ-a0-hr-b0-77.ucode */ = {isa = PBXFileReference; lastKnownFileType = file; path = "iwlwifi-QuZ-a0-hr-b0-77.ucode"; sourceTree = "<group>"; };
 		F8F884F6279128C400545F2C /* iwlwifi-QuZ-a0-jf-b0-68.ucode */ = {isa = PBXFileReference; lastKnownFileType = file; path = "iwlwifi-QuZ-a0-jf-b0-68.ucode"; sourceTree = "<group>"; };
 		F8F884F7279128DD00545F2C /* iwlwifi-so-a0-gf-a0-68.ucode */ = {isa = PBXFileReference; lastKnownFileType = file; path = "iwlwifi-so-a0-gf-a0-68.ucode"; sourceTree = "<group>"; };
 		F8F884F92791293C00545F2C /* iwlwifi-so-a0-gf4-a0-68.ucode */ = {isa = PBXFileReference; lastKnownFileType = file; path = "iwlwifi-so-a0-gf4-a0-68.ucode"; sourceTree = "<group>"; };
@@ -1325,7 +1325,7 @@
 		F8F884F22791286E00545F2C /* iwlwifi-Qu-b0-jf-b0-68.ucode */ = {isa = PBXFileReference; lastKnownFileType = file; path = "iwlwifi-Qu-b0-jf-b0-68.ucode"; sourceTree = "<group>"; };
 		F8F884F32791289200545F2C /* iwlwifi-Qu-c0-hr-b0-68.ucode */ = {isa = PBXFileReference; lastKnownFileType = file; path = "iwlwifi-Qu-c0-hr-b0-68.ucode"; sourceTree = "<group>"; };
 		F8F884F42791289C00545F2C /* iwlwifi-Qu-c0-jf-b0-68.ucode */ = {isa = PBXFileReference; lastKnownFileType = file; path = "iwlwifi-Qu-c0-jf-b0-68.ucode"; sourceTree = "<group>"; };
-		F8F884F5279128B300545F2C /* iwlwifi-QuZ-a0-hr-b0-68.ucode */ = {isa = PBXFileReference; lastKnownFileType = file; path = "iwlwifi-QuZ-a0-hr-b0-68.ucode"; sourceTree = "<group>"; };
+		F8F884F5279128B300545F2C /* iwlwifi-QuZ-a0-hr-b0-77.ucode */ = {isa = PBXFileReference; lastKnownFileType = file; path = "iwlwifi-QuZ-a0-hr-b0-77.ucode"; sourceTree = "<group>"; };
 		F8F884F6279128C400545F2C /* iwlwifi-QuZ-a0-jf-b0-68.ucode */ = {isa = PBXFileReference; lastKnownFileType = file; path = "iwlwifi-QuZ-a0-jf-b0-68.ucode"; sourceTree = "<group>"; };
 		F8F884F7279128DD00545F2C /* iwlwifi-so-a0-gf-a0-68.ucode */ = {isa = PBXFileReference; lastKnownFileType = file; path = "iwlwifi-so-a0-gf-a0-68.ucode"; sourceTree = "<group>"; };
 		F8F884F92791293C00545F2C /* iwlwifi-so-a0-gf4-a0-68.ucode */ = {isa = PBXFileReference; lastKnownFileType = file; path = "iwlwifi-so-a0-gf4-a0-68.ucode"; sourceTree = "<group>"; };
@@ -1567,7 +1567,7 @@
 				F8F884F42791289C00545F2C /* iwlwifi-Qu-c0-jf-b0-68.ucode */,
 				F8F884F02791284800545F2C /* iwlwifi-cc-a0-68.ucode */,
 				F8F884F12791285A00545F2C /* iwlwifi-Qu-b0-hr-b0-68.ucode */,
-				F8F884F5279128B300545F2C /* iwlwifi-QuZ-a0-hr-b0-68.ucode */,
+				F8F884F5279128B300545F2C /* iwlwifi-QuZ-a0-hr-b0-77.ucode */,
 				F8F884FC2791296C00545F2C /* iwlwifi-ty-a0-gf-a0-68.ucode */,
 				F8E3806526D533D400568FEB /* iwlwifi-ty-a0-gf-a0.pnvm */,
 				F8F884F7279128DD00545F2C /* iwlwifi-so-a0-gf-a0-68.ucode */,

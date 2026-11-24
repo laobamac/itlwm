@@ -277,6 +277,9 @@ public:
     int    iwx_enable_txq(struct iwx_softc *, int, int, int, int);
     int     iwx_tvqm_alloc_txq(struct iwx_softc *, int, int);
     int     iwx_tvqm_enable_txq(struct iwx_softc *, int, int, uint32_t);
+    int     iwx_scd_queue_cmd_ver(struct iwx_softc *);
+    int     iwx_scd_queue_remove(struct iwx_softc *, int, int);
+    int     iwx_scd_remove_sta_queues(struct iwx_softc *);
     void    iwx_post_alive(struct iwx_softc *);
     int iwx_send_time_event_cmd(struct iwx_softc *sc,
                             const struct iwx_time_event_cmd *cmd);
@@ -311,6 +314,8 @@ public:
     static void    iwx_update_chw(struct ieee80211com *);
     int     iwx_sta_rx_agg(struct iwx_softc *, struct ieee80211_node *, uint8_t,
                            uint16_t, uint16_t, int, int);
+    int     iwx_sta_rx_agg_baid_cfg_cmd(struct iwx_softc *, uint8_t, uint16_t,
+                                        uint16_t, int, uint8_t *);
     static int    iwx_ampdu_tx_start(struct ieee80211com *, struct ieee80211_node *,
             uint8_t);
     static void    iwx_ampdu_tx_stop(struct ieee80211com *, struct ieee80211_node *,
@@ -357,11 +362,14 @@ public:
     int    iwx_phy_ctxt_cmd_uhb(struct iwx_softc *, struct iwx_phy_ctxt *, uint8_t,
                                 uint8_t, uint32_t, uint32_t);
     int    iwx_phy_ctxt_cmd_v3(struct iwx_softc *, struct iwx_phy_ctxt *, uint8_t,
-                                uint8_t, uint32_t, uint32_t);
+                                uint8_t, uint32_t, uint32_t, int);
+    int    iwx_phy_send_rlc(struct iwx_softc *, struct iwx_phy_ctxt *, uint8_t,
+                            uint8_t);
     int    iwx_phy_ctxt_cmd(struct iwx_softc *, struct iwx_phy_ctxt *, uint8_t,
             uint8_t, uint32_t, uint32_t);
     int    iwx_send_cmd(struct iwx_softc *, struct iwx_host_cmd *);
     int    iwx_wait_notification(struct iwx_softc *, int *, int, uint32_t);
+    int    iwx_wait_scan_abort_done(struct iwx_softc *, int);
     int    iwx_send_cmd_pdu(struct iwx_softc *, uint32_t, uint32_t, uint16_t,
             const void *);
     int    iwx_send_cmd_status(struct iwx_softc *, struct iwx_host_cmd *,

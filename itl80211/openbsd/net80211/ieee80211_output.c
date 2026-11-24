@@ -1351,11 +1351,32 @@ ieee80211_get_probe_req(struct ieee80211com *ic, struct ieee80211_node *ni)
 {
 	const struct ieee80211_rateset *rs =
 	    &ic->ic_sup_rates[ieee80211_chan2mode(ic, ni->ni_chan)];
+	/*
+	 * The name that goes into the probe request.
+	 *
+	 * A network that hides its name only answers a probe request that
+	 * carries that name, so a probe that goes out without the name is
+	 * answered by nobody and the network stays invisible.
+	 *
+	 * ic_des_essid holds the name of the network that is currently being
+	 * joined. That is the right name for the probes that the scan sends
+	 * out while a join is in progress, but it is empty for a directed scan:
+	 * there the name is not known yet, it is exactly what the scan is
+	 * looking for.
+	 */
+	const uint8_t *essid = ic->ic_des_essid;
+	uint8_t esslen = ic->ic_des_esslen;
+#ifdef AIRPORT_WCL
+	if (ic->ic_wcl_scan_active && ic->ic_wcl_scan_ssid_length) {
+		essid = ic->ic_wcl_scan_ssid;
+		esslen = ic->ic_wcl_scan_ssid_length;
+	}
+#endif
 	mbuf_t m;
 	u_int8_t *frm;
 
 	m = ieee80211_getmgmt(MBUF_DONTWAIT, MT_DATA,
-	    2 + ic->ic_des_esslen +
+	    2 + esslen +
 	    2 + min(rs->rs_nrates, IEEE80211_RATE_SIZE) +
 	    ((rs->rs_nrates > IEEE80211_RATE_SIZE) ?
 		2 + rs->rs_nrates - IEEE80211_RATE_SIZE : 0) +
@@ -1365,7 +1386,7 @@ ieee80211_get_probe_req(struct ieee80211com *ic, struct ieee80211_node *ni)
 		return NULL;
 
 	frm = mtod(m, u_int8_t *);
-	frm = ieee80211_add_ssid(frm, ic->ic_des_essid, ic->ic_des_esslen);
+	frm = ieee80211_add_ssid(frm, essid, esslen);
 	frm = ieee80211_add_rates(frm, rs);
 	if (rs->rs_nrates > IEEE80211_RATE_SIZE)
 		frm = ieee80211_add_xrates(frm, rs);

@@ -56,6 +56,7 @@
 #include <net80211/ieee80211_var.h>
 #include <net80211/ieee80211_priv.h>
 
+
 int		ieee80211_send_eapol_key(struct ieee80211com *ic, mbuf_t m,
                                  struct ieee80211_node *ni, const struct ieee80211_ptk *ptk);
 #ifndef IEEE80211_STA_ONLY

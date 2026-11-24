@@ -54,6 +54,7 @@
 #include <net80211/ieee80211_var.h>
 #include <net80211/ieee80211_priv.h>
 
+
 void	ieee80211_recv_4way_msg1(struct ieee80211com *,
                                  struct ieee80211_eapol_key *, struct ieee80211_node *);
 #ifndef IEEE80211_STA_ONLY
@@ -91,6 +92,7 @@ ieee80211_eapol_key_input(struct ieee80211com *ic, mbuf_t m,
                           struct ieee80211_node *ni)
 {
     XYLog("%s\n", __FUNCTION__);
+    // user-space/driver split of the enterprise handshake is visible.
     struct _ifnet *ifp = &ic->ic_if;
     struct ether_header *eh;
     struct ieee80211_eapol_key *key;

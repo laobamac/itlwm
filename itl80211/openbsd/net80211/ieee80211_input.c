@@ -1122,8 +1122,22 @@ ieee80211_enqueue_data(struct ieee80211com *ic, mbuf_t m,
     }
 #endif
     if (m != NULL) {
-        if ((ic->ic_flags & IEEE80211_F_RSNON) &&
-            eh->ether_type == htons(ETHERTYPE_PAE)) {
+        /*
+         * EAPOL frames have to reach the 802.1X supplicant, otherwise the
+         * supplicant never sees the request of the access point and the
+         * session never starts.
+         *
+         * The test above is IEEE80211_F_RSNON, which is set for the
+         * networks that use RSN (WPA/WPA2). An enterprise network that uses
+         * plain 802.1X (EAP-PEAP, EAP-TLS) carries no RSN information
+         * element at all, so the flag is not set there and the frames were
+         * dropped before they reached the supplicant.
+         */
+        if (((ic->ic_flags & IEEE80211_F_RSNON)
+#ifdef AIRPORT_WCL
+             || ic->ic_wcl_enterprise
+#endif
+            ) && eh->ether_type == htons(ETHERTYPE_PAE)) {
             ifp->netStat->inputPackets++;
 #if NBPFILTER > 0
             /*

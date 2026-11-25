@@ -313,11 +313,26 @@ void AirportItlwmSkywalkInterface::free()
     IO80211InfraProtocol::free();
 }
 
+// Calls setLinkState() with the signature of the target version.
+//
+// The signature of setLinkState() has a fifth argument on Tahoe. That
+// argument has no counterpart on Sequoia, so its meaning is unknown and
+// zero is passed for it, which is the neutral value.
+static bool wclSetLinkState(AirportItlwmSkywalkInterface *iface,
+                             IO80211LinkState state, unsigned int generation,
+                             bool debounce, unsigned int code)
+{
+#if __IO80211_TARGET == __MAC_15_2
+    return iface->setLinkState(state, generation, debounce, code);
+#else
+    return iface->setLinkState(state, generation, debounce, code, 0);
+#endif
+}
+
 IOReturn AirportItlwmSkywalkInterface::wclCommand(OSObject *, void *a0, void *a1, void *a2, void *)
 {
     auto self = static_cast<AirportItlwmSkywalkInterface *>(a0);
     uintptr_t wcode = uintptr_t(a1);
-    if (wcode <= 15)
     switch (wcode) {
         case 0: break;
         case 1: break;
@@ -566,12 +581,6 @@ void AirportItlwmSkywalkInterface::publishWCLBeacon(const ieee80211_node *node, 
             memcpy(wclBssInfo, metadata, messageSize);
         }
     }
-    if (joinPending) {
-        // Beacons arrive several times per second, so only the matches and
-        // interesting transitions out of the ring buffer.
-        static unsigned bssInfoTraceCount = 0;
-        if (bssMatches || ((++bssInfoTraceCount % 16) == 0))
-    }
     if (joinPending && !assocNotified && ic->ic_des_esslen &&
         node->ni_esslen == ic->ic_des_esslen &&
         memcmp(node->ni_essid, ic->ic_des_essid, ic->ic_des_esslen) == 0) {
@@ -676,10 +685,6 @@ IOReturn AirportItlwmSkywalkInterface::installWCLKey(apple80211_key *key)
         if (!ieee80211_is_8021x_akm(akm)) {
             akm = IEEE80211_AKM_8021X;
         }
-        if (key->key_len > IEEE80211_PMK_LEN)
-        uint8_t any = 0;
-        for (auto byte : key->key_ea.octet) any |= byte;
-        if (any && !IEEE80211_ADDR_EQ(key->key_ea.octet, ni->ni_bssid))
         auto pmk = ieee80211_pmksa_add(ic, akm, ni->ni_macaddr, key->key, 0);
         return pmk ? kIOReturnSuccess : kIOReturnNoMemory;
     }
@@ -859,7 +864,7 @@ IOReturn AirportItlwmSkywalkInterface::startWCLJoin(AirportWCL::JoinRequest &joi
             // Safe here: the join request is handled in the context of the
             // framework's ioctl, so the interface is touched from the thread
             // IO80211Family expects.
-            setLinkState(kIO80211NetworkLinkUp, 0, false, 0);
+            wclSetLinkState(this, kIO80211NetworkLinkUp, 0, false, 0);
             wclLinkUpReported = true;
         }
     } else {
@@ -1374,11 +1379,11 @@ IOReturn AirportItlwmSkywalkInterface::setWCL_LINK_STATE_UPDATE(apple80211_wcl_u
         if (bytes[8])
             setCurrentApAddress(reinterpret_cast<ether_addr *>(data));
         if (bytes[7])
-            setLinkState(kIO80211NetworkLinkUp, 0, false, 0);
+            wclSetLinkState(this, kIO80211NetworkLinkUp, 0, false, 0);
     } else {
         uint32_t debounce = AirportWCL::read32(bytes + 12);
         setCurrentApAddress(nullptr);
-        setLinkState(kIO80211NetworkLinkDown, 0, debounce != 0, debounce);
+        wclSetLinkState(this, kIO80211NetworkLinkDown, 0, debounce != 0, debounce);
     }
     IOReturn status = kIOReturnSuccess;
 #else

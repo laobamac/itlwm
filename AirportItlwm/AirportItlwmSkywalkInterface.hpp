@@ -587,6 +587,10 @@ private:
     // four way handshake finished. The two are kept apart because the
     // framework ends the join on the authorization, not on the link.
     bool wclLinkReady = false;
+    // The first beacon of a personal network arrived before the four way
+    // handshake was done, so the link status was held back until the port
+    // was authorized.
+    bool wclFirstBeaconHeld = false;
     // The 802.1X port is authorized. Only the handshake completion sets
     // this, never the link up callback.
     bool portAuthorized = false;

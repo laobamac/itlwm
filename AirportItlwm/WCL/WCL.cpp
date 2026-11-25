@@ -880,6 +880,7 @@ IOReturn AirportItlwmSkywalkInterface::startWCLJoin(AirportWCL::JoinRequest &joi
     earlyBssidPending = false;
     joinPending = true;
     assocNotified = firstBeaconNotified = portAuthorized = wclLinkReady = false;
+    wclFirstBeaconHeld = false;
     wclAssociatedBeacons = 0;
     bzero(wclBeaconInfo, sizeof(wclBeaconInfo));
     disassocIsVoluntary = false;
@@ -1034,17 +1035,6 @@ void AirportItlwmSkywalkInterface::handleWCLLink(bool up)
 void AirportItlwmSkywalkInterface::handleWCLEvent(int code, void *data)
 {
     ieee80211com *ic = fHalService ? fHalService->get80211Controller() : NULL;
-    // Beacons arrive several times per second and scan completions are just
-    // as frequent; tracing each of them floods the ring buffer and evicts the
-    // interesting transitions.
-    static unsigned beaconTraceCount = 0;
-    bool traceEvent = true;
-    if (code == IEEE80211_EVT_BEACON)
-        traceEvent = ((++beaconTraceCount % 64) == 0);
-    else if (code == IEEE80211_EVT_SCAN_DONE)
-        traceEvent = false;
-    if (traceEvent) {
-    }
     if (wclStopping)
         return;
     // Authentication and association traffic counts as activity for the sleep
@@ -1063,6 +1053,17 @@ void AirportItlwmSkywalkInterface::handleWCLEvent(int code, void *data)
         // This is the only place where that is announced: the link up
         // callback only means that EAPOL frames can flow.
         portAuthorized = true;
+        // The link status that was held back until the four way handshake
+        // was done is reported by the notification below. The first beacon
+        // is reported here, because the beacon branch skipped it while the
+        // notification was held back.
+        if (wclFirstBeaconHeld) {
+            wclFirstBeaconHeld = false;
+            firstBeaconNotified = true;
+            AirportWCL::FirstBeaconEvent first = {};
+            memcpy(first.peer.bssid, joinBSSID, 6);
+            instance->postMessage(this, AirportWCL::FirstBeacon, &first, sizeof(first), true);
+        }
         // The link was already reported as up when the first beacon arrived,
         // long before the 802.1X port was authorized. The system needs to see
         // the transition to an authorized link, otherwise it tears the session
@@ -1198,6 +1199,23 @@ void AirportItlwmSkywalkInterface::handleWCLEvent(int code, void *data)
                 memcpy(event.peer.bssid, joinBSSID, 6);
                 if (!wclBssValid)
                     break;
+                // A personal network must not report the link up before the
+                // four way handshake is done. IO80211 sometimes leaves the
+                // network right away when it sees the link up, the port is
+                // authorized a few milliseconds too late and the join of
+                // airportd then runs into its ten second timeout. The link
+                // status is therefore held back until the port is
+                // authorized.
+                //
+                // An enterprise network needs the opposite: the link status
+                // is what makes the framework run setCurrentBSS, and that is
+                // the only way the BSSID and the SSID reach the 802.1X
+                // supplicant. It was already sent when the association
+                // completed, so nothing is held back there.
+                if (!portAuthorized && !ic->ic_wcl_enterprise) {
+                    wclFirstBeaconHeld = true;
+                    break;
+                }
                 firstBeaconNotified = true;
                 // The link status is reported when the association completes,
                 // so that the framework learns about the link even when no

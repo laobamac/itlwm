@@ -68,6 +68,7 @@
 #include <net80211/ieee80211_var.h>
 #include <net80211/ieee80211_priv.h>
 
+
 mbuf_t ieee80211_input_hwdecrypt(struct ieee80211com *,
                                  struct ieee80211_node *, mbuf_t,
                                  struct ieee80211_rxinfo *rxi);
@@ -1122,8 +1123,12 @@ ieee80211_enqueue_data(struct ieee80211com *ic, mbuf_t m,
     }
 #endif
     if (m != NULL) {
-        if ((ic->ic_flags & IEEE80211_F_RSNON) &&
-            eh->ether_type == htons(ETHERTYPE_PAE)) {
+        if (eh->ether_type == htons(ETHERTYPE_PAE))
+        if (((ic->ic_flags & IEEE80211_F_RSNON)
+#ifdef AIRPORT_WCL
+             || ic->ic_wcl_enterprise
+#endif
+            ) && eh->ether_type == htons(ETHERTYPE_PAE)) {
             ifp->netStat->inputPackets++;
 #if NBPFILTER > 0
             /*

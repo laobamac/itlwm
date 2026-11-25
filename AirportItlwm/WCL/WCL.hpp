@@ -65,8 +65,38 @@ enum Message : uint32_t {
     JoinAbortComplete = 214,
     LinkStatus = 216,
     LqmUpdate = 39,
-    ScanDone = 237
+    ScanDone = 237,
+    // Typed WCL message APPLE80211_M_SUPPLICANT_EVENT.
+    //
+    // The framework consumes it in WCLNetManager::handleSupplicantEvent() and
+    // in WCL::axManager::handleSupplicantEvent(); the axManager turns it into
+    // AX_MANAGER_EVENT_4WAYHS_DONE, which is the confirmation the 802.1X
+    // supplicant waits for. Without it eapolclient waits for its handshake
+    // notification, times out after 10 seconds and the framework leaves the
+    // network with "4wayHsTimeout".
+    //
+    // The code was recovered from the framework binary: the APPLE80211_M_*
+    // message name table in IO80211Family lists the names in enum order, and
+    // APPLE80211_M_SUPPLICANT_EVENT is the 76th entry. Two independent
+    // anchors in the same space confirm the numbering (ResetInterface 49,
+    // DriverAvailable 55 match the values used above).
+    SupplicantEvent = 76,
 };
+
+// Payload of apple80211_message_supplicant_event.
+//
+// Both framework handlers require the message to carry exactly 40 bytes and
+// drop it unless the field at offset 8 is zero. The framework also inspects
+// the flag word at offset 12 (bit 0 asks it to override the transitional
+// mode flags) and writes a byte back at offset 24.
+struct SupplicantEventMsg {
+    uint32_t type;      // 0x00
+    uint32_t error;     // 0x04
+    uint32_t event;     // 0x08 — must be zero
+    uint32_t flags;     // 0x0c
+    uint8_t  reserved[24]; // 0x10 .. 0x27
+};
+static_assert(sizeof(SupplicantEventMsg) == 40, "supplicant event payload size");
 
 struct SequoiaLqmUpdate {
     uint8_t rssiValid;
@@ -539,11 +569,6 @@ inline bool decodeJoin(const void *buffer, size_t length, JoinRequest &out) {
         keyLength > 32 || rsnLength > 257 || length < 0x218 + size_t(count) * 18)
         return false;
     if (p[0x21c] & 1)
-        return false;
-    uint8_t addressBits = 0;
-    for (unsigned i = 0; i < 6; ++i)
-        addressBits |= p[0x21c + i];
-    if (!addressBits)
         return false;
     out = {};
     out.lowerAuth = read32(p + 0x10);

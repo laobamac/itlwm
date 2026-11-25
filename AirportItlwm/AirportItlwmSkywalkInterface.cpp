@@ -32,6 +32,26 @@ const char* hexdump(uint8_t *buf, size_t len) {
     return str;
 }
 
+// property, which can be read back with ioreg.
+IOReturn AirportItlwmSkywalkInterface::traceSimple(const char *tag)
+{
+    return kIOReturnUnsupported;
+}
+
+IOReturn AirportItlwmSkywalkInterface::traceActionFrame(apple80211_wcl_action_frame *frame)
+{
+    if (frame) {
+        const uint8_t *p = reinterpret_cast<const uint8_t *>(frame);
+        for (unsigned off = 0; off < 192; off += 64) {
+            char hex[129];
+            for (unsigned i = 0; i < 64; ++i)
+                snprintf(hex + 2 * i, 3, "%02x", p[off + i]);
+            hex[128] = 0;
+        }
+    }
+    return kIOReturnUnsupported;
+}
+
 static int ieeeChanFlag2appleScanFlagVentura(int flags)
 {
     int ret = 0;
@@ -99,7 +119,7 @@ static int ieeeChanFlag2apple(int flags, int bw)
 void AirportItlwmSkywalkInterface::associateSSID(uint8_t *ssid, uint32_t ssid_len, const struct ether_addr &bssid, uint32_t authtype_lower, uint32_t authtype_upper, uint8_t *key, uint32_t key_len, int key_index)
 {
     struct ieee80211com *ic = fHalService->get80211Controller();
-    
+
     ieee80211_disable_rsn(ic);
     ieee80211_disable_wep(ic);
     
@@ -486,7 +506,12 @@ IOReturn AirportItlwmSkywalkInterface::
 getMCS_INDEX_SET(struct apple80211_mcs_index_set_data *ad)
 {
     struct ieee80211com *ic = fHalService->get80211Controller();
-    if (ic->ic_state == IEEE80211_S_RUN) {
+    // The negotiated MCS set is known as soon as the association is through.
+    // The framework asks for it while the link comes up, which is before the
+    // 802.1X port is authorized and the interface therefore is not running
+    // yet. Answering with an error there makes the framework give up on the
+    // network ("Update Bss fail") and end the join in "join failure".
+    if (ic->ic_bss && ic->ic_state >= IEEE80211_S_ASSOC) {
         memset(ad, 0, sizeof(*ad));
         ad->version = APPLE80211_VERSION;
         size_t size = min(ARRAY_SIZE(ic->ic_bss->ni_rxmcs), ARRAY_SIZE(ad->mcs_set_map));
@@ -545,7 +570,12 @@ IOReturn AirportItlwmSkywalkInterface::
 getRATE_SET(struct apple80211_rate_set_data *ad)
 {
     struct ieee80211com *ic = fHalService->get80211Controller();
-    if (ic->ic_state == IEEE80211_S_RUN) {
+    // The negotiated rate set is known as soon as the association is through.
+    // The framework asks for it while the link comes up, which is before the
+    // 802.1X port is authorized and the interface therefore is not running
+    // yet. Answering with an error there makes the framework give up on the
+    // network ("Update Bss fail") and end the join in "join failure".
+    if (ic->ic_bss && ic->ic_state >= IEEE80211_S_ASSOC) {
         memset(ad, 0, sizeof(*ad));
         ad->version = APPLE80211_VERSION;
         ad->num_rates = ic->ic_bss->ni_rates.rs_nrates;
@@ -652,7 +682,203 @@ getBSSID(struct apple80211_bssid_data *bd)
         memcpy(bd->bssid.octet, ic->ic_bss->ni_bssid, APPLE80211_ADDR_LEN);
         return kIOReturnSuccess;
     }
-    return 6;
+    const uint8_t *target = NULL;
+    if (ic->ic_flags & IEEE80211_F_DESBSSID)
+        target = ic->ic_des_bssid;
+    else if (ic->ic_bss)
+        target = ic->ic_bss->ni_bssid;
+    auto usable = [](const uint8_t *bssid) {
+        if (!bssid)
+            return false;
+        for (unsigned i = 0; i < APPLE80211_ADDR_LEN; ++i)
+            if (bssid[i] != 0)
+                return true;
+        return false;
+    };
+    if (!usable(target)) {
+        // The join request already carries the BSSID of the network, so the
+        // system can be told about it before the association completes. The
+        // user space supplicant refuses to send anything without a BSSID.
+        //
+        // The node of the current association is still empty while the join
+        // is running, so the check has to look at the content and not only at
+        // the pointer.
+        if (usable(joinBSSID))
+            target = joinBSSID;
+        else
+            target = NULL;
+    }
+    if (target) {
+        memset(bd, 0, sizeof(*bd));
+        bd->version = APPLE80211_VERSION;
+        memcpy(bd->bssid.octet, target, APPLE80211_ADDR_LEN);
+        return kIOReturnSuccess;
+    }
+    return kIOReturnNotReady;
+}
+
+// The framework hands its WCL configuration to the driver through these
+// interfaces and logs a failure for every one of them the driver refuses.
+//
+// The values belong to a firmware that does the roaming, the power saving and
+// the traffic classification on its own; the port this driver targets has no
+// use for them. They are accepted so that the framework stops reporting a
+// failure on every join and the state machine it drives stays in sync with
+// the driver.
+//
+// The structures are not published in the SDK, so the payload is deliberately
+// not read: a wrong guess about the layout would corrupt the framework's
+// buffer.
+static IOReturn acceptWCLConfiguration(const char *tag)
+{
+    return kIOReturnSuccess;
+}
+
+IOReturn AirportItlwmSkywalkInterface::setWCL_QOS_PARAMS(apple80211_wcl_qos_params *)
+{
+    return acceptWCLConfiguration("WCL_QOS_PARAMS");
+}
+
+// The four configurations below arrive with structures that Apple has never
+// published: the SDK only forward declares them, so the payload is
+// deliberately not read. A wrong guess about the layout would corrupt the
+// framework's buffer.
+//
+// Accepting them only keeps the framework from reporting a failure on every
+// join and from retrying the request. None of them is needed for the link to
+// come up:
+//
+//   * ARP_MODE asks the driver to answer the address resolution requests of
+//     the system itself, which the USB stack already does;
+//   * WNM_OPS configures the 802.11v network management offload, the roaming
+//     is driven by the framework itself;
+//   * REASSOC is the hint that the framework may reassociate;
+//   * CONFIG_BGSCAN is the background scan schedule, the driver scans on
+//     demand only.
+IOReturn AirportItlwmSkywalkInterface::setWCL_ARP_MODE(apple80211_wcl_arp_mode *)
+{
+    return acceptWCLConfiguration("WCL_ARP_MODE");
+}
+
+IOReturn AirportItlwmSkywalkInterface::setWCL_WNM_OPS(apple80211_wcl_wnm_config_t *)
+{
+    return acceptWCLConfiguration("WCL_WNM_OPS");
+}
+
+IOReturn AirportItlwmSkywalkInterface::setWCL_REASSOC(apple80211_reassoc *)
+{
+    return acceptWCLConfiguration("WCL_REASSOC");
+}
+
+IOReturn AirportItlwmSkywalkInterface::setWCL_CONFIG_BGSCAN(apple80211_bg_scan *)
+{
+    return acceptWCLConfiguration("WCL_CONFIG_BGSCAN");
+}
+
+IOReturn AirportItlwmSkywalkInterface::setWCL_SOI_CONFIG(appl80211_sleep_on_inactivity_config *data)
+{
+    if (!data)
+        return kIOReturnBadArgument;
+    // The framework copies one 44 byte entry of its gSOIConfigData table into
+    // this structure, indexed by the mode. The timeout at offset 0x0c is the
+    // inactivity timeout in milliseconds.
+    memcpy(&wclSOIConfig, data, sizeof(wclSOIConfig));
+    wclSOIIdle = false;
+    noteWCLSOIActivity();
+    return kIOReturnSuccess;
+}
+
+IOReturn AirportItlwmSkywalkInterface::setPM_MODE(apple80211_pm_mode *data)
+{
+    if (!data)
+        return kIOReturnBadArgument;
+    // The framework sends 0x188 (392) bytes with APPLE80211_IOC_PM_MODE, but
+    // the layout of the structure has never been published: only the first
+    // two words are known to carry the request, the rest of the payload is
+    // whatever the framework had in its buffer. The values are therefore only
+    // logged, they are not acted upon.
+    //
+    // A USB attached adapter has no power save mode of its own, its power
+    // management is done by the USB stack, so there is nothing to switch here.
+    // Accepting the request only keeps the framework from reporting a failure
+    // on every join.
+    pmMode = data->mode;
+    pmModeFlags = data->flags;
+    return kIOReturnSuccess;
+}
+
+IOReturn AirportItlwmSkywalkInterface::getWCL_FW_HOT_CHANNELS(apple80211_fw_hot_channels *data)
+{
+    if (!data)
+        return kIOReturnBadArgument;
+    // The framework builds its neighbour cache from the list of hot channels
+    // the firmware reports. A USB attached adapter has no such list, it does
+    // not report channels by activity. An empty list keeps the behaviour of
+    // the driver unchanged, it only stops the framework from reporting a
+    // failure on every join.
+    memset(data, 0, sizeof(*data));
+    data->count = 0;
+    return kIOReturnSuccess;
+}
+
+// Records that the link was used. The inactivity timeout is measured from
+// the last of these.
+void AirportItlwmSkywalkInterface::noteWCLSOIActivity()
+{
+    clock_get_uptime(&wclSOILastActivity);
+    if (wclSOIIdle) {
+        wclSOIIdle = false;
+    }
+}
+
+// Updates the idle state from the time of the last activity.
+void AirportItlwmSkywalkInterface::refreshWCLSOIState()
+{
+    if (!wclSOIConfig.timeoutMs)
+        return;
+    uint64_t now = 0;
+    clock_get_uptime(&now);
+    if (!wclSOILastActivity) {
+        wclSOILastActivity = now;
+        return;
+    }
+    bool idle = (now - wclSOILastActivity) / 1000000ULL >= wclSOIConfig.timeoutMs;
+    if (idle != wclSOIIdle) {
+        wclSOIIdle = idle;
+    }
+}
+
+IOReturn AirportItlwmSkywalkInterface::setWCL_REAL_TIME_MODE(apple80211_wcl_real_time_mode *)
+{
+    return acceptWCLConfiguration("WCL_REAL_TIME_MODE");
+}
+
+IOReturn AirportItlwmSkywalkInterface::setWCL_SET_ROAM_LOCK(apple80211_set_roam_lock *)
+{
+    return acceptWCLConfiguration("WCL_SET_ROAM_LOCK");
+}
+
+IOReturn AirportItlwmSkywalkInterface::setWCL_ROAM_PROFILE_CONFIG(apple80211_roam_profile_config *)
+{
+    return acceptWCLConfiguration("WCL_ROAM_PROFILE_CONFIG");
+}
+
+IOReturn AirportItlwmSkywalkInterface::setWCL_ROAM_PROFILE_CONFIGV1(apple80211_roam_profile_configV1 *)
+{
+    return acceptWCLConfiguration("WCL_ROAM_PROFILE_CONFIGV1");
+}
+
+IOReturn AirportItlwmSkywalkInterface::setWCL_CONFIG_BG_PARAMS(apple80211_bg_params *)
+{
+    return acceptWCLConfiguration("WCL_CONFIG_BG_PARAMS");
+}
+
+IOReturn AirportItlwmSkywalkInterface::setWCL_LINK_UP_DONE(void *)
+{
+    // The framework reports that the link is up and the driver may start to
+    // send. The link state is reported by the driver itself, so there is
+    // nothing left to do here.
+    return acceptWCLConfiguration("WCL_LINK_UP_DONE");
 }
 
 IOReturn AirportItlwmSkywalkInterface::
@@ -746,11 +972,32 @@ getNOISE(struct apple80211_noise_data *nd)
     return 6;
 }
 
+IOReturn AirportItlwmSkywalkInterface::setPOWERSAVE(apple80211_powersave_data *data)
+{
+    if (!data)
+        return kIOReturnBadArgument;
+    // The framework tells the driver which power save level the radio should
+    // use. The driver implements the sleep on inactivity, so the level is
+    // remembered here: with the power saving turned off the link must not
+    // report itself as idle any more, otherwise the framework keeps the
+    // radio busy although the user asked for the opposite.
+    wclPowersaveLevel = data->powersave_level;
+    refreshWCLSOIState();
+    return kIOReturnSuccess;
+}
+
 IOReturn AirportItlwmSkywalkInterface::
 getPOWERSAVE(struct apple80211_powersave_data *pd)
 {
     pd->version = APPLE80211_VERSION;
-    pd->powersave_level = APPLE80211_POWERSAVE_MODE_DISABLED;
+    // The framework asks for the power saving state of the link. Report the
+    // sleep on inactivity state that the driver tracks, so that the system
+    // knows that the radio has nothing to do.
+    refreshWCLSOIState();
+    bool powersaveAllowed = wclPowersaveLevel != APPLE80211_POWERSAVE_MODE_DISABLED;
+    pd->powersave_level = (powersaveAllowed && wclSOIIdle)
+                               ? APPLE80211_POWERSAVE_MODE_80211
+                               : APPLE80211_POWERSAVE_MODE_DISABLED;
     return kIOReturnSuccess;
 }
 

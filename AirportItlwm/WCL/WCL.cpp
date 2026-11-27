@@ -730,9 +730,26 @@ void AirportItlwmSkywalkInterface::handleWCLEvent(int code, void *data)
                             &update, sizeof(update), true);
                     }
 #else
+                    apple80211_rssi_data rssi = {};
+                    int32_t rssiVal = 0;
+                    int16_t noiseVal = -95;
+                    if (getRSSI(&rssi) == kIOReturnSuccess && rssi.aggregate_rssi < 0) {
+                        rssiVal = rssi.aggregate_rssi;
+                    } else if (ic->ic_bss) {
+                        rssiVal = -(0 - IWM_MIN_DBM - ic->ic_bss->ni_rssi);
+                    }
+                    if (rssiVal >= 0) {
+                        rssiVal = -65;
+                    }
+                    if (fHalService && fHalService->getDriverInfo()) {
+                        int16_t bssNoise = fHalService->getDriverInfo()->getBSSNoise();
+                        if (bssNoise != 0)
+                            noiseVal = bssNoise < 0 ? bssNoise : -bssNoise;
+                    }
                     AirportWCL::LqmBeaconUpdate update;
                     if (AirportWCL::makeBeaconUpdate(
-                            wclLqmBeacons - wclLqmReportedBeacons, update)) {
+                            wclLqmBeacons - wclLqmReportedBeacons, update,
+                            rssiVal, noiseVal)) {
                         instance->postMessage(this, AirportWCL::LqmUpdate,
                             &update, sizeof(update), true);
                         wclLqmReportedBeacons = wclLqmBeacons;
